@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Example Paper: Large Language Models in Production",
+    "abstract": "This paper discusses best practices for deploying large language models in production environments, including optimization techniques and scaling strategies.",
+    "authors": ["John Doe", "Jane Smith"],
+    "arxiv_id": "2301.12345",
+    "url": "https://arxiv.org/abs/2301.12345"
+  },
+  {
+    "title": "Example Paper: Retrieval-Augmented Generation Survey",
+    "abstract": "A comprehensive survey of retrieval-augmented generation methods for enhancing language model capabilities with external knowledge.",
+    "authors": ["Alice Johnson", "Bob Williams"],
+    "arxiv_id": "2302.67890",
+    "url": "https://arxiv.org/abs/2302.67890"
+  }
+]
