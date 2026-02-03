@@ -1,0 +1,126 @@
+# Research Paper Intelligence Assistant Configuration
+
+# ArXiv Settings
+arxiv:
+  categories:
+    - cs.AI  # Artificial Intelligence
+    - cs.CL  # Computation and Language
+    - cs.LG  # Machine Learning
+    - cs.RO  # Robotics
+    - cs.CV  # Computer Vision
+  max_results: 50  # Fetch top N papers to filter from
+  sort_by: "submittedDate"
+  sort_order: "descending"
+
+# Research Keywords (for relevance filtering)
+keywords:
+  primary:
+    - LLM
+    - Large Language Model
+    - RAG
+    - Retrieval Augmented Generation
+    - Multi-Agent
+    - Robotics
+    - RLHF
+    - Reinforcement Learning
+    - Foundation Model
+  secondary:
+    - NLP
+    - Computer Vision
+    - Transformer
+    - Prompt Engineering
+    - Tool Use
+    - Embodied AI
+    - Multimodal
+
+# Similarity-based Filtering (Primary Filter)
+similarity_filter:
+  enabled: true  # Temporarily disabled for quick testing
+  min_similarity_score: 0.6  # 0-1 scale, minimum cosine similarity to keep
+  top_k_papers: 20  # Keep top K most similar papers
+  embedding_model: "all-MiniLM-L6-v2"  # Sentence transformer model
+  cache_embeddings: true  # Cache embeddings to speed up future runs
+
+  # Reference paper sources
+  use_zotero_library: true  # Compare against papers in your Zotero library
+  zotero_paper_limit: 100  # Max papers to fetch from Zotero
+
+  # Scholar-Inbox integration (manual export)
+  scholar_inbox_file: "data/scholar_inbox.json"  # Path to exported recommendations
+
+  # Scoring weights (must sum to 1.0)
+  similarity_weight: 0.7  # Weight for similarity score
+  keyword_weight: 0.3  # Weight for keyword matching score
+
+# Filtering Settings
+filtering:
+  max_papers_per_day: 10
+  min_relevance_score: 0.3  # 0-1 scale
+  prioritize_github_links: true  # Boost papers with code
+
+# LLM Analysis Settings
+llm:
+  provider: "openai"
+  summary_prompt: |
+    You are an AI research assistant. Analyze this academic paper and provide a concise TL;DR summary.
+
+    Paper Title: {title}
+    Authors: {authors}
+    Abstract: {abstract}
+
+    Provide:
+    1. Core Contribution (1-2 sentences)
+    2. Key Innovation (1-2 sentences)
+    3. Practical Impact (1-2 sentences)
+
+    Keep it under 150 words.
+
+  detailed_prompt: |
+    You are an AI research assistant. Provide a comprehensive analysis of this academic paper.
+
+    Paper Title: {title}
+    Authors: {authors}
+    Abstract: {abstract}
+
+    Provide a detailed analysis covering:
+    1. **Background & Motivation**: Why is this problem important?
+    2. **Methodology**: What approach did they take? Include key technical details.
+    3. **Key Findings**: What are the main results and contributions?
+    4. **Strengths & Limitations**: Critical evaluation
+    5. **Practical Applications**: Real-world use cases
+    6. **Related Work**: How does this fit into the broader research landscape?
+
+    Write in clear, accessible language. Use markdown formatting.
+
+# Notion Settings
+notion:
+  properties:
+    title: "Title"
+    authors: "Authors"
+    date: "Published Date"
+    categories: "Categories"
+    keywords: "Keywords"
+    arxiv_id: "ArXiv ID"
+    pdf_link: "PDF Link"
+    github_link: "GitHub"
+    summary: "Summary"
+    detailed_analysis: "Detailed Analysis"
+
+# Zotero Settings (optional)
+zotero:
+  enabled: false
+  collection_name: "Daily ArXiv Papers"
+  tags:
+    - "auto-imported"
+    - "arxiv"
+
+# Scheduling
+schedule:
+  run_time: "09:00"  # Run daily at 9 AM (24-hour format)
+  timezone: "UTC"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/paper_assistant.log"
