@@ -27,13 +27,14 @@ load_dotenv()
 logger = setup_logger(__name__)
 
 
-def main(dry_run: bool = False, max_papers: int = None):
+def main(dry_run: bool = False, max_papers: int = None, deep_dive: bool = None):
     """
     Main workflow: Fetch, filter, analyze, and sync papers.
 
     Args:
         dry_run: If True, don't create Notion/Zotero entries
         max_papers: Override max papers to process
+        deep_dive: Override deep dive mode (web search enrichment)
     """
     print("\n" + "="*80)
     print("🤖 RESEARCH PAPER INTELLIGENCE ASSISTANT")
@@ -74,6 +75,29 @@ def main(dry_run: bool = False, max_papers: int = None):
 
     if not papers:
         logger.warning("No papers found. Exiting.")
+        return
+
+    # STEP 1.5: Deduplicate against Zotero (Pre-filter)
+    print("🗂️  STEP 1.5: Checking for duplicates in Zotero")
+    print("-" * 80)
+
+    if os.getenv('ZOTERO_API_KEY') and os.getenv('ZOTERO_LIBRARY_ID'):
+        try:
+            zotero_client = ZoteroClient()
+            if zotero_client.enabled:
+                papers = zotero_client.filter_new_papers(papers)
+                print(f"✓ {len(papers)} new papers after deduplication\n")
+            else:
+                print("⚠️  Zotero not available, skipping deduplication\n")
+        except Exception as e:
+            logger.warning(f"Zotero deduplication failed: {str(e)}, continuing with all papers")
+            print(f"⚠️  Deduplication failed: {str(e)}\n")
+    else:
+        print("⚠️  Zotero not configured, skipping deduplication\n")
+
+    if not papers:
+        logger.info("All papers are duplicates. No new papers to process.")
+        print("✓ All papers already exist in Zotero. Nothing new to process.\n")
         return
 
     # STEP 2: Filter papers by similarity (Primary Filter)
@@ -214,18 +238,41 @@ def main(dry_run: bool = False, max_papers: int = None):
             analyzer = LLMAnalyzer(
                 model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
                 summary_prompt_template=llm_config.get('summary_prompt'),
-                detailed_prompt_template=llm_config.get('detailed_prompt')
+                detailed_prompt_template=llm_config.get('detailed_prompt'),
+                config=config  # Pass full config for ContentExtractor
             )
+
+            # Determine if deep dive mode should be used
+            # Priority: CLI argument > config file > default (False)
+            use_deep_dive = deep_dive if deep_dive is not None else llm_config.get('deep_dive_mode', False)
+
+            if use_deep_dive:
+                print(f"  🌐 Deep Dive Mode ENABLED - Using web search for context enrichment")
+                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+                print(f"     Note: This will take longer but provides richer context\n")
+            else:
+                print(f"  📄 Standard Mode - PDF-based analysis only")
+                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+                print(f"     Tip: Use --deep-dive for web search enrichment\n")
 
             analyzed_papers = []
             for i, paper in enumerate(final_papers, 1):
                 print(f"  [{i}/{len(final_papers)}] {paper['title'][:60]}...")
 
                 try:
-                    analysis = analyzer.analyze_paper(paper)
+                    if use_deep_dive:
+                        # Use deep dive mode with web search
+                        analysis = analyzer.analyze_paper_with_web_search(paper)
+                        sources_count = len(analysis.get('web_sources', []))
+                        print(f"      ✓ Complete (with {sources_count} web sources)")
+                    else:
+                        # Use standard analysis
+                        analysis = analyzer.analyze_paper(paper)
+                        print(f"      ✓ Complete")
+
                     paper.update(analysis)
                     analyzed_papers.append(paper)
-                    print(f"      ✓ Complete")
+
                 except Exception as e:
                     logger.error(f"Analysis failed for paper {i}: {str(e)}")
                     print(f"      ✗ Error: {str(e)}")
@@ -346,6 +393,11 @@ if __name__ == '__main__':
         help='Maximum number of papers to process'
     )
     parser.add_argument(
+        '--deep-dive',
+        action='store_true',
+        help='Enable deep dive mode with web search for context enrichment (requires gpt-4o)'
+    )
+    parser.add_argument(
         '--schedule',
         action='store_true',
         help='Run on schedule (daily at configured time)'
@@ -357,7 +409,7 @@ if __name__ == '__main__':
         if args.schedule:
             schedule_daily_run()
         else:
-            main(dry_run=args.dry_run, max_papers=args.max_papers)
+            main(dry_run=args.dry_run, max_papers=args.max_papers, deep_dive=args.deep_dive)
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Exiting...")
         sys.exit(0)

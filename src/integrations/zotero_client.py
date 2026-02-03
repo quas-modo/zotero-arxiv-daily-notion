@@ -204,3 +204,126 @@ class ZoteroClient:
         except Exception as e:
             logger.error(f"Error preparing Zotero papers for embedding: {str(e)}")
             return []
+
+    def get_existing_identifiers(self, limit: int = 1000) -> Dict[str, str]:
+        """
+        Get all unique identifiers from existing Zotero papers for deduplication.
+
+        Args:
+            limit: Maximum number of papers to check
+
+        Returns:
+            Dict mapping identifiers (arxiv_id, doi, title_normalized) to zotero_key
+        """
+        if not self.enabled:
+            logger.warning("Zotero is not enabled")
+            return {}
+
+        try:
+            items = self.get_all_papers(limit=limit)
+            identifier_map = {}
+
+            for item in items:
+                data = item.get('data', {})
+                zotero_key = item.get('key', '')
+
+                # Extract ArXiv ID from URL or extra field
+                url = data.get('url', '').lower()
+                if 'arxiv.org' in url:
+                    # Extract ArXiv ID from URL like https://arxiv.org/abs/2301.12345
+                    import re
+                    match = re.search(r'arxiv\.org/(?:abs|pdf)/(\d+\.\d+)', url)
+                    if match:
+                        arxiv_id = match.group(1)
+                        identifier_map[f"arxiv:{arxiv_id}"] = zotero_key
+
+                # Extract DOI
+                doi = data.get('DOI', '').strip()
+                if doi:
+                    identifier_map[f"doi:{doi.lower()}"] = zotero_key
+
+                # Normalize title as fallback identifier
+                title = data.get('title', '').strip().lower()
+                if title:
+                    # Remove common punctuation and extra spaces
+                    normalized_title = ' '.join(title.split())
+                    identifier_map[f"title:{normalized_title}"] = zotero_key
+
+            logger.info(f"Loaded {len(identifier_map)} unique identifiers from Zotero")
+            return identifier_map
+
+        except Exception as e:
+            logger.error(f"Error getting Zotero identifiers: {str(e)}")
+            return {}
+
+    def check_duplicate(self, paper: Dict, identifier_map: Dict[str, str]) -> Optional[str]:
+        """
+        Check if a paper already exists in Zotero.
+
+        Args:
+            paper: Paper dictionary with arxiv_id, doi, or title
+            identifier_map: Map from get_existing_identifiers()
+
+        Returns:
+            Zotero key if duplicate found, None otherwise
+        """
+        # Check ArXiv ID
+        if paper.get('arxiv_id'):
+            arxiv_key = f"arxiv:{paper['arxiv_id']}"
+            if arxiv_key in identifier_map:
+                return identifier_map[arxiv_key]
+
+        # Check DOI
+        if paper.get('doi'):
+            doi_key = f"doi:{paper['doi'].lower()}"
+            if doi_key in identifier_map:
+                return identifier_map[doi_key]
+
+        # Check normalized title as fallback
+        if paper.get('title'):
+            title = paper['title'].strip().lower()
+            normalized_title = ' '.join(title.split())
+            title_key = f"title:{normalized_title}"
+            if title_key in identifier_map:
+                return identifier_map[title_key]
+
+        return None
+
+    def filter_new_papers(self, papers: List[Dict]) -> List[Dict]:
+        """
+        Filter out papers that already exist in Zotero library.
+
+        Args:
+            papers: List of paper dictionaries to check
+
+        Returns:
+            List of papers that don't exist in Zotero (new papers only)
+        """
+        if not self.enabled:
+            logger.warning("Zotero is not enabled, returning all papers")
+            return papers
+
+        logger.info(f"Checking {len(papers)} papers for duplicates in Zotero...")
+
+        # Get existing identifiers
+        identifier_map = self.get_existing_identifiers()
+
+        if not identifier_map:
+            logger.warning("No existing identifiers found in Zotero")
+            return papers
+
+        # Filter out duplicates
+        new_papers = []
+        duplicate_count = 0
+
+        for paper in papers:
+            duplicate_key = self.check_duplicate(paper, identifier_map)
+            if duplicate_key:
+                duplicate_count += 1
+                logger.debug(f"Duplicate found: {paper.get('title', '')[:60]}... (Zotero key: {duplicate_key})")
+            else:
+                new_papers.append(paper)
+
+        logger.info(f"Filtered out {duplicate_count} duplicates, {len(new_papers)} new papers remain")
+
+        return new_papers

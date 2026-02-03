@@ -128,6 +128,12 @@ class NotionClient:
                 "url": paper['pdf_url']
             }
 
+        # HTML Link (url) - only if available
+        if paper.get('html_url') and paper.get('html_available', False):
+            properties["HTML Link"] = {
+                "url": paper['html_url']
+            }
+
         # GitHub Link (url)
         if paper.get('github_links') and paper['github_links']:
             properties["GitHub"] = {
@@ -189,84 +195,41 @@ class NotionClient:
                 }
             })
 
-        # Add abstract in a toggle block
-        if paper.get('abstract'):
-            blocks.append({
-                "object": "block",
-                "type": "toggle",
-                "toggle": {
-                    "rich_text": [{"text": {"content": "📄 Abstract", "annotations": {"bold": True}}}],
-                    "color": "default",
-                    "children": [
-                        {
-                            "object": "block",
-                            "type": "quote",
-                            "quote": {
-                                "rich_text": [{"text": {"content": paper['abstract'][:2000]}}],
-                                "color": "default"
-                            }
-                        }
-                    ]
-                }
-            })
+        # Add extraction metadata callout (if available)
+        if paper.get('extraction_method'):
+            extraction_info = []
+            extraction_method = paper.get('extraction_method', 'unknown')
+            html_available = paper.get('html_available', False)
 
-        # Add summary as a callout if available
-        if paper.get('summary'):
-            blocks.append({
-                "object": "block",
-                "type": "heading_2",
-                "heading_2": {
-                    "rich_text": [{"text": {"content": "✨ Summary (TL;DR)"}}],
-                    "color": "blue"
-                }
-            })
+            if extraction_method == 'html' and html_available:
+                extraction_info.append("✅ Extracted from HTML (structured sections available)")
+            elif extraction_method == 'pdf':
+                extraction_info.append("📄 Extracted from PDF")
+            else:
+                extraction_info.append(f"📑 Extraction method: {extraction_method}")
 
-            # Split summary into chunks (Notion has 2000 char limit per block)
-            summary_text = paper['summary']
-            for chunk in self._split_text(summary_text, 2000):
+            if paper.get('num_figures_analyzed', 0) > 0:
+                extraction_info.append(f"🖼️ {paper['num_figures_analyzed']} figures analyzed")
+
+            if extraction_info:
                 blocks.append({
                     "object": "block",
                     "type": "callout",
                     "callout": {
-                        "rich_text": [{"text": {"content": chunk}}],
-                        "icon": {"emoji": "✨"},
+                        "rich_text": [{"text": {"content": " | ".join(extraction_info)}}],
+                        "icon": {"emoji": "🔍"},
                         "color": "blue_background"
                     }
                 })
 
-        # Add detailed analysis if available
-        if paper.get('detailed_analysis'):
-            blocks.append({
-                "object": "block",
-                "type": "divider",
-                "divider": {}
-            })
-
-            blocks.append({
-                "object": "block",
-                "type": "heading_2",
-                "heading_2": {
-                    "rich_text": [{"text": {"content": "🔍 Detailed Analysis"}}],
-                    "color": "default"
-                }
-            })
-
-            # Process markdown-style content
-            analysis_text = paper['detailed_analysis']
-            blocks.extend(self._parse_markdown_to_blocks(analysis_text))
-
-        # Add Chinese translations section
-        blocks.append({
-            "object": "block",
-            "type": "divider",
-            "divider": {}
-        })
-
+        # ========================================
+        # CHINESE CONTENT FIRST
+        # ========================================
         blocks.append({
             "object": "block",
             "type": "heading_1",
             "heading_1": {
-                "rich_text": [{"text": {"content": "🇨🇳 中文翻译 (Chinese Translation)"}}],
+                "rich_text": [{"text": {"content": "🇨🇳 中文版本 (Chinese Version)"}}],
                 "color": "red"
             }
         })
@@ -277,7 +240,7 @@ class NotionClient:
                 "object": "block",
                 "type": "toggle",
                 "toggle": {
-                    "rich_text": [{"text": {"content": "📄 摘要 (Abstract)", "annotations": {"bold": True}}}],
+                    "rich_text": [{"text": {"content": "📄 摘要 (Abstract)"}}],
                     "color": "default",
                     "children": [
                         {
@@ -299,6 +262,29 @@ class NotionClient:
                 }
             })
 
+        # Add Chinese introduction (from PDF extraction)
+        if paper.get('introduction_zh'):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "📖 引言 (Introduction)"}}],
+                    "color": "purple"
+                }
+            })
+
+            # Use extracted introduction from PDF
+            intro_text = paper['introduction_zh']
+            for chunk in self._split_text(intro_text, 2000):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": self._parse_inline_formatting(chunk),
+                        "color": "default"
+                    }
+                })
+
         # Add Chinese summary as callout
         if paper.get('summary_zh'):
             blocks.append({
@@ -314,14 +300,20 @@ class NotionClient:
                     "object": "block",
                     "type": "callout",
                     "callout": {
-                        "rich_text": [{"text": {"content": chunk}}],
-                        "icon": {"emoji": "💫"},
+                        "rich_text": self._parse_inline_formatting(chunk),
+                        "icon": {"emoji": "✨"},
                         "color": "orange_background"
                     }
                 })
 
         # Add Chinese detailed analysis
         if paper.get('detailed_analysis_zh'):
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+
             blocks.append({
                 "object": "block",
                 "type": "heading_2",
@@ -331,6 +323,112 @@ class NotionClient:
                 }
             })
             blocks.extend(self._parse_markdown_to_blocks(paper['detailed_analysis_zh']))
+
+        # ========================================
+        # ENGLISH CONTENT SECOND
+        # ========================================
+        blocks.append({
+            "object": "block",
+            "type": "divider",
+            "divider": {}
+        })
+
+        blocks.append({
+            "object": "block",
+            "type": "heading_1",
+            "heading_1": {
+                "rich_text": [{"text": {"content": "🇬🇧 English Version"}}],
+                "color": "blue"
+            }
+        })
+
+        # Add English abstract in a toggle block
+        if paper.get('abstract'):
+            blocks.append({
+                "object": "block",
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{"text": {"content": "📄 Abstract"}}],
+                    "color": "default",
+                    "children": [
+                        {
+                            "object": "block",
+                            "type": "quote",
+                            "quote": {
+                                "rich_text": [{"text": {"content": paper['abstract'][:2000]}}],
+                                "color": "default"
+                            }
+                        }
+                    ]
+                }
+            })
+
+        # Add English introduction (from PDF extraction)
+        if paper.get('introduction'):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "📖 Introduction"}}],
+                    "color": "purple"
+                }
+            })
+
+            # Use extracted introduction from PDF
+            intro_text = paper['introduction']
+            for chunk in self._split_text(intro_text, 2000):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": self._parse_inline_formatting(chunk),
+                        "color": "default"
+                    }
+                })
+
+        # Add English summary as a callout
+        if paper.get('summary'):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "✨ Summary (TL;DR)"}}],
+                    "color": "blue"
+                }
+            })
+
+            summary_text = paper['summary']
+            for chunk in self._split_text(summary_text, 2000):
+                blocks.append({
+                    "object": "block",
+                    "type": "callout",
+                    "callout": {
+                        "rich_text": self._parse_inline_formatting(chunk),
+                        "icon": {"emoji": "✨"},
+                        "color": "blue_background"
+                    }
+                })
+
+        # Add English detailed analysis if available
+        if paper.get('detailed_analysis'):
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "🔍 Detailed Analysis"}}],
+                    "color": "default"
+                }
+            })
+
+            # Process markdown-style content
+            analysis_text = paper['detailed_analysis']
+            blocks.extend(self._parse_markdown_to_blocks(analysis_text))
 
         # Add links section with proper formatting
         if paper.get('pdf_url') or paper.get('entry_url') or paper.get('github_links'):
@@ -362,6 +460,19 @@ class NotionClient:
                     }
                 })
 
+            # HTML Link (if available)
+            if paper.get('html_url') and paper.get('html_available', False):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"text": {"content": "🌐 HTML: "}},
+                            {"text": {"content": paper['html_url'], "link": {"url": paper['html_url']}}}
+                        ]
+                    }
+                })
+
             # ArXiv Link
             if paper.get('entry_url'):
                 blocks.append({
@@ -388,6 +499,68 @@ class NotionClient:
                             ]
                         }
                     })
+
+        # Add web search sources section (if available from deep dive mode)
+        if paper.get('web_sources') and len(paper['web_sources']) > 0:
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "🌐 Web Search Sources (Deep Dive Mode)"}}],
+                    "color": "purple"
+                }
+            })
+
+            # Add callout explaining web sources
+            blocks.append({
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"text": {"content": f"Found {len(paper['web_sources'])} web sources to provide additional context on frameworks, implementations, and related work mentioned in this paper."}}],
+                    "icon": {"emoji": "🔍"},
+                    "color": "purple_background"
+                }
+            })
+
+            # Add each web source as a link with description
+            for i, source in enumerate(paper['web_sources'][:10], 1):  # Limit to 10 sources
+                title = source.get('title', 'Untitled')
+                url = source.get('url', '')
+                snippet = source.get('snippet', '')
+
+                # Create rich text with title as link
+                rich_text_elements = [
+                    {"text": {"content": f"{i}. ", "link": None}},
+                ]
+
+                if url:
+                    rich_text_elements.append({
+                        "text": {"content": title, "link": {"url": url}},
+                        "annotations": {"bold": True}
+                    })
+                else:
+                    rich_text_elements.append({
+                        "text": {"content": title},
+                        "annotations": {"bold": True}
+                    })
+
+                # Add snippet if available
+                if snippet:
+                    rich_text_elements.append({"text": {"content": f"\n   {snippet[:200]}..."}})
+
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": rich_text_elements
+                    }
+                })
 
         return blocks
 
@@ -515,7 +688,7 @@ class NotionClient:
                     "object": "block",
                     "type": "toggle",
                     "toggle": {
-                        "rich_text": [{"text": {"content": content, "annotations": {"bold": True}}}],
+                        "rich_text": [{"text": {"content": content}}],
                         "color": "gray_background"
                     }
                 })

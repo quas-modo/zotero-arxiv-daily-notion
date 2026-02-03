@@ -15,23 +15,42 @@ arxiv:
 # Research Keywords (for relevance filtering)
 keywords:
   primary:
-    - LLM
-    - Large Language Model
-    - RAG
-    - Retrieval Augmented Generation
-    - Multi-Agent
-    - Robotics
-    - RLHF
-    - Reinforcement Learning
-    - Foundation Model
-  secondary:
-    - NLP
-    - Computer Vision
-    - Transformer
-    - Prompt Engineering
-    - Tool Use
+    # 核心领域：具身智能与物理世界建模
     - Embodied AI
-    - Multimodal
+    - World Models
+    - Robotic Manipulation
+    - Generalist Robot Policy
+    
+    # 核心技术架构 (2026 热门)
+    - VLA Models (Vision-Language-Action)
+    - Diffusion Policy
+    - Flow Matching for Robotics
+    - Video Generative Pre-training
+    
+    # 核心能力
+    - Fine-grained Manipulation
+    - Long-horizon Planning
+    - Cross-embodiment Learning
+    - Skill Generalization
+
+  secondary:
+    # 支撑技术与表示学习
+    - 3D Gaussian Splatting (3DGS)
+    - Foundation Models for Robotics
+    - Vision-Language Models (VLM)
+    - Affordance Learning
+    - Reinforcement Learning (Offline/Online)
+    
+    # 仿真与数据
+    - Sim-to-Real Transfer
+    - Synthetic Data Generation
+    - Real2Edit2Real
+    - DROID / Bridge Dataset
+    
+    # 任务场景
+    - Dexterous Manipulation
+    - Contact-rich Tasks
+    - Active Perception
 
 # Similarity-based Filtering (Primary Filter)
 similarity_filter:
@@ -49,8 +68,9 @@ similarity_filter:
   scholar_inbox_file: "data/scholar_inbox.json"  # Path to exported recommendations
 
   # Scoring weights (must sum to 1.0)
-  similarity_weight: 0.7  # Weight for similarity score
-  keyword_weight: 0.3  # Weight for keyword matching score
+  # Higher similarity weight = prioritize semantic relevance over keyword matching
+  similarity_weight: 0.85  # Weight for similarity score (semantic matching)
+  keyword_weight: 0.15  # Weight for keyword matching score (term frequency)
 
 # Filtering Settings
 filtering:
@@ -61,6 +81,16 @@ filtering:
 # LLM Analysis Settings
 llm:
   provider: "openai"
+
+  # Deep Dive Mode with Web Search
+  deep_dive_mode: false  # Enable web search for context enrichment (requires gpt-4o or later)
+  # When enabled, the LLM will use web search to find:
+  # - Official documentation for mentioned frameworks
+  # - GitHub repositories for implementations
+  # - Related blog posts and technical articles
+  # - Comparison articles and benchmarks
+  # Note: Uses more tokens and takes longer, but provides richer context
+
   summary_prompt: |
     You are an AI research assistant. Analyze this academic paper and provide a concise TL;DR summary.
 
@@ -91,6 +121,18 @@ llm:
     6. **Related Work**: How does this fit into the broader research landscape?
 
     Write in clear, accessible language. Use markdown formatting.
+
+# HTML Extraction Settings
+html_extraction:
+  enabled: true              # Enable HTML extraction as primary method
+  prefer_html: true          # Try HTML first before falling back to PDF
+  download_images: true      # Download images from HTML figures
+  timeout: 15                # HTTP request timeout (seconds)
+  max_figures: 3             # Maximum number of figures to extract
+  # Note: HTML extraction provides structured sections (Introduction, Methodology, Conclusion)
+  # and better figure extraction with captions. Falls back to PDF if HTML unavailable.
+  # ArXiv HTML versions are available for ~80% of papers from 2024+.
+
 
 # Notion Settings
 notion:

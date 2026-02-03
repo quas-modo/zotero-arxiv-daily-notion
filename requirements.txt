@@ -22,6 +22,10 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 feedparser>=6.0.0
 
+# PDF processing
+PyPDF2>=3.0.0
+pymupdf>=1.23.0  # Optional but recommended for figure extraction
+
 # Date handling
 python-dateutil>=2.8.0
 

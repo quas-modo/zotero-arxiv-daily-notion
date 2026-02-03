@@ -1,10 +1,12 @@
 """LLM-based paper analysis using OpenAI API"""
 
 import os
-from typing import Dict, Optional
+import json
+from typing import Dict, Optional, List
 from openai import OpenAI
 from dotenv import load_dotenv
 from ..utils.logger import setup_logger
+from ..utils.content_extractor import ContentExtractor
 
 # Load environment variables
 load_dotenv()
@@ -21,7 +23,8 @@ class LLMAnalyzer:
         model: str = "gpt-4o",
         base_url: Optional[str] = None,
         summary_prompt_template: Optional[str] = None,
-        detailed_prompt_template: Optional[str] = None
+        detailed_prompt_template: Optional[str] = None,
+        config: Optional[Dict] = None
     ):
         """
         Initialize LLM analyzer.
@@ -32,12 +35,14 @@ class LLMAnalyzer:
             base_url: Custom base URL for OpenAI API (defaults to OPENAI_BASE_URL env var or OpenAI default)
             summary_prompt_template: Custom template for summary prompt
             detailed_prompt_template: Custom template for detailed analysis prompt
+            config: Configuration dict (for ContentExtractor)
         """
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
 
         self.model = model
+        self.config = config or {}
 
         # Get base URL from parameter or environment variable
         self.base_url = base_url or os.getenv('OPENAI_BASE_URL')
@@ -50,16 +55,21 @@ class LLMAnalyzer:
             self.client = OpenAI(api_key=self.api_key)
             logger.info(f"LLM Analyzer initialized with model: {self.model}")
 
+        # Initialize content extractor
+        self.content_extractor = ContentExtractor(config=self.config)
+
         # Default prompts
         self.summary_prompt_template = summary_prompt_template or self._default_summary_prompt()
         self.detailed_prompt_template = detailed_prompt_template or self._default_detailed_prompt()
 
-    def analyze_paper(self, paper: Dict) -> Dict:
+    def analyze_paper(self, paper: Dict, include_figures: bool = True) -> Dict:
         """
         Generate both summary and detailed analysis for a paper (English + Chinese).
+        Extracts content using HTML-first with PDF fallback.
 
         Args:
             paper: Paper dictionary with title, authors, abstract, etc.
+            include_figures: Whether to extract and analyze figures
 
         Returns:
             Dictionary with English and Chinese analysis fields
@@ -67,27 +77,68 @@ class LLMAnalyzer:
         logger.info(f"Analyzing paper: {paper.get('title', 'Unknown')[:80]}...")
 
         try:
+            # Extract multimodal content (HTML-first, PDF fallback)
+            logger.info("Extracting multimodal content...")
+            multimodal_content = self.content_extractor.extract_multimodal_content(paper)
+
+            extraction_method = multimodal_content.get('extraction_method', 'pdf')
+            html_available = multimodal_content.get('html_available', False)
+            introduction = multimodal_content.get('introduction', '')
+            methodology = multimodal_content.get('methodology', '')
+            conclusion = multimodal_content.get('conclusion', '')
+            figures = multimodal_content.get('figures', [])
+
+            logger.info(f"Content extraction via {extraction_method.upper()}: "
+                       f"intro={len(introduction)} chars, method={len(methodology)} chars, "
+                       f"conclusion={len(conclusion)} chars, figures={len(figures)}")
+
+            if not introduction:
+                # Fallback: use abstract as introduction
+                logger.warning("Could not extract Introduction, using abstract as fallback")
+                introduction = paper.get('abstract', '')
+
             # Generate English summary
             summary = self.generate_summary(paper)
 
-            # Generate English detailed analysis
-            detailed = self.generate_detailed_analysis(paper)
+            # Generate English detailed analysis with all sections
+            if methodology or conclusion:
+                # Use enhanced analysis with sections if available (HTML extraction)
+                detailed = self.generate_detailed_analysis_with_sections(
+                    paper, introduction, methodology, conclusion, figures
+                )
+            else:
+                # Fall back to figures-only analysis (PDF extraction)
+                detailed = self.generate_detailed_analysis_with_figures(
+                    paper, introduction, figures
+                )
 
             # Generate Chinese translations
             summary_zh = self.translate_to_chinese(summary, "summary")
             detailed_zh = self.translate_to_chinese(detailed, "detailed analysis")
             abstract_zh = self.translate_to_chinese(paper.get('abstract', ''), "abstract")
+            introduction_zh = self.translate_to_chinese(introduction, "introduction") if introduction else ""
+            methodology_zh = self.translate_to_chinese(methodology, "methodology") if methodology else ""
+            conclusion_zh = self.translate_to_chinese(conclusion, "conclusion") if conclusion else ""
 
             result = {
                 'summary': summary,
                 'detailed_analysis': detailed,
+                'introduction': introduction,
+                'methodology': methodology,
+                'conclusion': conclusion,
                 'summary_zh': summary_zh,
                 'detailed_analysis_zh': detailed_zh,
                 'abstract_zh': abstract_zh,
-                'analysis_model': self.model
+                'introduction_zh': introduction_zh,
+                'methodology_zh': methodology_zh,
+                'conclusion_zh': conclusion_zh,
+                'analysis_model': self.model,
+                'num_figures_analyzed': len(figures),
+                'extraction_method': extraction_method,
+                'html_available': html_available
             }
 
-            logger.info("✓ Analysis completed successfully (English + Chinese)")
+            logger.info(f"✓ Analysis completed successfully (English + Chinese + {len(figures)} figures, method={extraction_method})")
             return result
 
         except Exception as e:
@@ -95,11 +146,263 @@ class LLMAnalyzer:
             return {
                 'summary': f"Error generating summary: {str(e)}",
                 'detailed_analysis': f"Error generating analysis: {str(e)}",
+                'introduction': '',
+                'methodology': '',
+                'conclusion': '',
                 'summary_zh': f"生成摘要时出错: {str(e)}",
                 'detailed_analysis_zh': f"生成分析时出错: {str(e)}",
                 'abstract_zh': '',
-                'analysis_model': self.model
+                'introduction_zh': '',
+                'methodology_zh': '',
+                'conclusion_zh': '',
+                'analysis_model': self.model,
+                'num_figures_analyzed': 0,
+                'extraction_method': 'error',
+                'html_available': False
             }
+
+    def analyze_paper_with_web_search(self, paper: Dict, include_figures: bool = True) -> Dict:
+        """
+        Generate deep-dive analysis with web search context enrichment.
+        Uses OpenAI tool-calling to search for documentation, repos, and related content.
+
+        Args:
+            paper: Paper dictionary with title, authors, abstract, etc.
+            include_figures: Whether to extract and analyze figures
+
+        Returns:
+            Dictionary with analysis fields + web_sources
+        """
+        logger.info(f"[DEEP DIVE] Analyzing paper with web search: {paper.get('title', 'Unknown')[:80]}...")
+
+        try:
+            # Extract multimodal content (HTML-first, PDF fallback)
+            logger.info("Extracting multimodal content...")
+            multimodal_content = self.content_extractor.extract_multimodal_content(paper)
+
+            extraction_method = multimodal_content.get('extraction_method', 'pdf')
+            html_available = multimodal_content.get('html_available', False)
+            introduction = multimodal_content.get('introduction', '')
+            methodology = multimodal_content.get('methodology', '')
+            conclusion = multimodal_content.get('conclusion', '')
+            figures = multimodal_content.get('figures', [])
+
+            logger.info(f"Content extraction via {extraction_method.upper()}: "
+                       f"intro={len(introduction)} chars, method={len(methodology)} chars, "
+                       f"conclusion={len(conclusion)} chars, figures={len(figures)}")
+
+            if not introduction:
+                logger.warning("Could not extract Introduction, using abstract as fallback")
+                introduction = paper.get('abstract', '')
+
+            # Generate summary (standard, no web search needed)
+            summary = self.generate_summary(paper)
+
+            # Generate deep-dive analysis WITH web search
+            detailed, web_sources = self.generate_analysis_with_web_context(
+                paper, introduction, figures
+            )
+
+            # Generate Chinese translations
+            summary_zh = self.translate_to_chinese(summary, "summary")
+            detailed_zh = self.translate_to_chinese(detailed, "detailed analysis")
+            abstract_zh = self.translate_to_chinese(paper.get('abstract', ''), "abstract")
+            introduction_zh = self.translate_to_chinese(introduction, "introduction") if introduction else ""
+            methodology_zh = self.translate_to_chinese(methodology, "methodology") if methodology else ""
+            conclusion_zh = self.translate_to_chinese(conclusion, "conclusion") if conclusion else ""
+
+            result = {
+                'summary': summary,
+                'detailed_analysis': detailed,
+                'introduction': introduction,
+                'methodology': methodology,
+                'conclusion': conclusion,
+                'summary_zh': summary_zh,
+                'detailed_analysis_zh': detailed_zh,
+                'abstract_zh': abstract_zh,
+                'introduction_zh': introduction_zh,
+                'methodology_zh': methodology_zh,
+                'conclusion_zh': conclusion_zh,
+                'analysis_model': self.model,
+                'num_figures_analyzed': len(figures),
+                'web_sources': web_sources,
+                'analysis_mode': 'deep_dive_with_web_search',
+                'extraction_method': extraction_method,
+                'html_available': html_available
+            }
+
+            logger.info(f"✓ Deep dive analysis completed with {len(web_sources)} web sources")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in deep dive analysis: {str(e)}")
+            # Fallback to standard analysis
+            logger.info("Falling back to standard analysis without web search")
+            return self.analyze_paper(paper, include_figures=include_figures)
+
+    def generate_analysis_with_web_context(
+        self,
+        paper: Dict,
+        introduction: str,
+        figures: list
+    ) -> tuple[str, List[Dict]]:
+        """
+        Generate detailed analysis using web search tool for context enrichment.
+
+        Args:
+            paper: Paper dictionary
+            introduction: Extracted introduction text
+            figures: List of figure dicts
+
+        Returns:
+            Tuple of (analysis_text, web_sources)
+        """
+        # Build figure descriptions
+        figure_descriptions = []
+        if figures:
+            for fig in figures[:3]:
+                figure_descriptions.append(f"- Figure {fig['figure_num']} (Page {fig['page_num']}): {fig['caption']}")
+
+        figure_context = "\n".join(figure_descriptions) if figure_descriptions else "No figures extracted."
+
+        # Enhanced prompt with web search instructions
+        prompt = f"""You are an expert AI research assistant analyzing an academic paper with access to web search.
+
+Paper Title: {paper.get('title', 'Unknown')}
+Authors: {', '.join(paper.get('authors', [])[:5])}
+Categories: {', '.join(paper.get('categories', []))}
+ArXiv ID: {paper.get('arxiv_id', 'Unknown')}
+PDF: {paper.get('pdf_url', '')}
+ArXiv: {paper.get('entry_url', '')}
+
+Abstract:
+{paper.get('abstract', 'No abstract available')}
+
+Introduction (Extracted):
+{introduction[:2000] if introduction else 'Introduction not available.'}
+
+Figures Identified:
+{figure_context}
+
+---
+
+IMPORTANT INSTRUCTIONS FOR WEB SEARCH:
+
+When you encounter specialized terms, frameworks, or methodologies in this paper, use web search to find:
+1. **Official documentation** for mentioned frameworks/libraries
+2. **GitHub repositories** for open-source implementations
+3. **Related blog posts** or technical articles explaining key concepts
+4. **Comparison articles** if the paper references competing approaches
+
+Search for terms like:
+- Specific robotics frameworks (e.g., "RT-1", "RT-2", "PaLM-E")
+- World model implementations
+- Novel architectures mentioned
+- Dataset names
+- Benchmark comparisons
+
+---
+
+Provide a comprehensive analysis with the following sections:
+
+## Core Methodology & Architecture
+Explain the main approach. If frameworks/architectures are mentioned, search for their documentation to provide accurate context.
+
+## Technical Innovations
+What's novel? Search for related work to compare and contrast.
+
+## Implementation Details
+If code is available or frameworks are mentioned, search for GitHub repos and documentation links.
+
+## Evaluation & Benchmarks
+What datasets and metrics were used? Search for dataset documentation if needed.
+
+## Strengths & Limitations
+Critical evaluation.
+
+## Practical Applications & Real-World Context
+Search for blog posts or articles showing real-world applications of similar techniques.
+
+## Related Work & Ecosystem
+How does this fit into the broader research landscape? Search for related papers or surveys.
+
+---
+
+Use markdown formatting. Include inline citations to your web search results like [Source: Title](URL).
+"""
+
+        try:
+            # Call OpenAI with web_search tool enabled
+            logger.info("Calling OpenAI with web search tool...")
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert AI research assistant who analyzes academic papers. You have access to web search to find documentation, code repositories, and related articles for better context. Use web search proactively when you encounter specialized terms, frameworks, or concepts that would benefit from additional context."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                tools=[{"type": "web_search"}],  # Enable web search tool
+                temperature=0.7,
+                max_tokens=4000
+            )
+
+            # Extract the analysis text
+            analysis = response.choices[0].message.content.strip()
+
+            # Extract web sources from tool calls (if any)
+            web_sources = []
+
+            # Check if the response includes tool calls
+            if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls:
+                for tool_call in response.choices[0].message.tool_calls:
+                    if tool_call.type == "web_search":
+                        # Parse the tool call results
+                        try:
+                            search_results = json.loads(tool_call.function.arguments)
+                            if 'results' in search_results:
+                                for result in search_results['results']:
+                                    web_sources.append({
+                                        'title': result.get('title', 'Untitled'),
+                                        'url': result.get('url', ''),
+                                        'snippet': result.get('snippet', ''),
+                                        'source_type': 'web_search'
+                                    })
+                        except Exception as e:
+                            logger.warning(f"Failed to parse tool call results: {str(e)}")
+
+            # Also extract inline citations from the text
+            # Look for [Source: Title](URL) patterns
+            import re
+            citation_pattern = r'\[Source: ([^\]]+)\]\(([^\)]+)\)'
+            citations = re.findall(citation_pattern, analysis)
+
+            for title, url in citations:
+                if not any(s['url'] == url for s in web_sources):
+                    web_sources.append({
+                        'title': title,
+                        'url': url,
+                        'snippet': '',
+                        'source_type': 'inline_citation'
+                    })
+
+            logger.info(f"Generated analysis with {len(web_sources)} web sources")
+            logger.debug(f"Web sources: {json.dumps(web_sources, indent=2)}")
+
+            return analysis, web_sources
+
+        except Exception as e:
+            logger.error(f"Error generating analysis with web search: {str(e)}")
+            logger.info("Falling back to standard detailed analysis")
+
+            # Fallback to standard analysis
+            analysis = self.generate_detailed_analysis_with_figures(paper, introduction, figures)
+            return analysis, []
 
     def generate_summary(self, paper: Dict) -> str:
         """
@@ -115,7 +418,9 @@ class LLMAnalyzer:
         prompt = self.summary_prompt_template.format(
             title=paper.get('title', 'Unknown'),
             authors=', '.join(paper.get('authors', [])[:5]),
-            abstract=paper.get('abstract', 'No abstract available')
+            abstract=paper.get('abstract', 'No abstract available'),
+            pdf_url=paper.get('pdf_url', ''),
+            arxiv_url=paper.get('entry_url', '')
         )
 
         try:
@@ -153,7 +458,9 @@ class LLMAnalyzer:
             authors=', '.join(paper.get('authors', [])[:5]),
             abstract=paper.get('abstract', 'No abstract available'),
             categories=', '.join(paper.get('categories', [])),
-            arxiv_id=paper.get('arxiv_id', 'Unknown')
+            arxiv_id=paper.get('arxiv_id', 'Unknown'),
+            pdf_url=paper.get('pdf_url', ''),
+            arxiv_url=paper.get('entry_url', '')
         )
 
         try:
@@ -174,6 +481,276 @@ class LLMAnalyzer:
         except Exception as e:
             logger.error(f"Error generating detailed analysis: {str(e)}")
             raise
+
+    def generate_detailed_analysis_with_figures(self, paper: Dict, introduction: str, figures: list) -> str:
+        """
+        Generate comprehensive detailed analysis with multimodal context (text + figures).
+
+        Args:
+            paper: Paper dictionary
+            introduction: Extracted introduction text
+            figures: List of figure dicts with image_data, caption, page_num
+
+        Returns:
+            Detailed analysis text
+        """
+        # Check if model supports vision (gpt-4o, gpt-4-turbo, gpt-4-vision-preview)
+        supports_vision = any(model in self.model.lower() for model in ['gpt-4o', 'gpt-4-turbo', 'gpt-4-vision'])
+
+        # Build figure descriptions
+        figure_descriptions = []
+        if figures:
+            for fig in figures[:3]:  # Limit to top 3 figures
+                figure_descriptions.append(f"- Figure {fig['figure_num']} (Page {fig['page_num']}): {fig['caption']}")
+
+        figure_context = "\n".join(figure_descriptions) if figure_descriptions else "No figures extracted."
+
+        # Enhanced prompt with multimodal context
+        prompt = f"""You are an expert AI research assistant analyzing an academic paper with access to both text and visual content.
+
+Paper Title: {paper.get('title', 'Unknown')}
+Authors: {', '.join(paper.get('authors', [])[:5])}
+Categories: {', '.join(paper.get('categories', []))}
+ArXiv ID: {paper.get('arxiv_id', 'Unknown')}
+PDF: {paper.get('pdf_url', '')}
+ArXiv: {paper.get('entry_url', '')}
+
+Abstract:
+{paper.get('abstract', 'No abstract available')}
+
+Introduction (Extracted):
+{introduction[:2000] if introduction else 'Introduction not available.'}
+
+Figures Identified:
+{figure_context}
+
+Provide a comprehensive analysis focusing on:
+
+## Core Methodology
+Explain the main approach and technical innovation. If architecture diagrams or methodology figures are present, describe how they contribute to understanding the approach.
+
+## Key Technical Contributions
+What are the novel aspects? What problems do they solve?
+
+## Structural Innovations
+If figures show system architecture or model structure, explain the key design choices and their implications.
+
+## Evaluation & Results
+What metrics/benchmarks were used? What were the key findings?
+
+## Strengths & Limitations
+Critical analysis of the approach.
+
+## Practical Applications
+Real-world use cases and implications.
+
+## Related Work Context
+How this fits into the broader research landscape.
+
+Use markdown formatting. Be specific and technical. Reference the figures when describing methodology or architecture."""
+
+        try:
+            # If vision model and figures available, include images
+            if supports_vision and figures:
+                messages = [
+                    {"role": "system", "content": "You are an expert AI research assistant who analyzes academic papers using both text and visual information. You can examine figures, diagrams, and charts to provide deeper insights into methodology and results."},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt}
+                        ]
+                    }
+                ]
+
+                # Add up to 3 figures as images
+                for fig in figures[:3]:
+                    messages[1]["content"].append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/{fig['image_format']};base64,{fig['image_data']}"
+                        }
+                    })
+
+                logger.info(f"Analyzing with {len(figures[:3])} figures using vision model")
+
+            else:
+                # Text-only analysis
+                messages = [
+                    {"role": "system", "content": "You are an expert AI research assistant who provides comprehensive analysis of academic papers. You explain complex concepts clearly and highlight practical implications."},
+                    {"role": "user", "content": prompt}
+                ]
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=3000
+            )
+
+            analysis = response.choices[0].message.content.strip()
+            logger.debug(f"Generated multimodal analysis ({len(analysis)} chars, {len(figures)} figures)")
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error generating multimodal analysis: {str(e)}")
+            # Fallback to regular analysis
+            logger.info("Falling back to text-only analysis")
+            return self.generate_detailed_analysis(paper)
+
+    def generate_detailed_analysis_with_sections(
+        self,
+        paper: Dict,
+        introduction: str,
+        methodology: str,
+        conclusion: str,
+        figures: list
+    ) -> str:
+        """
+        Generate comprehensive detailed analysis with structured sections from HTML extraction.
+        Enhanced version that uses Introduction, Methodology, and Conclusion separately.
+
+        Args:
+            paper: Paper dictionary
+            introduction: Extracted introduction text
+            methodology: Extracted methodology text
+            conclusion: Extracted conclusion text
+            figures: List of figure dicts with image_data, caption, etc.
+
+        Returns:
+            Detailed analysis text
+        """
+        # Check if model supports vision
+        supports_vision = any(model in self.model.lower() for model in ['gpt-4o', 'gpt-4-turbo', 'gpt-4-vision'])
+
+        # Build figure descriptions
+        figure_descriptions = []
+        if figures:
+            for fig in figures[:3]:
+                fig_num = fig.get('figure_number', fig.get('figure_num', '?'))
+                caption = fig.get('caption', 'No caption')
+                figure_descriptions.append(f"- Figure {fig_num}: {caption}")
+
+        figure_context = "\n".join(figure_descriptions) if figure_descriptions else "No figures extracted."
+
+        # Enhanced prompt that references all three sections
+        prompt = f"""You are an expert AI research assistant analyzing an academic paper with structured content extraction.
+
+Paper Title: {paper.get('title', 'Unknown')}
+Authors: {', '.join(paper.get('authors', [])[:5])}
+Categories: {', '.join(paper.get('categories', []))}
+ArXiv ID: {paper.get('arxiv_id', 'Unknown')}
+PDF: {paper.get('pdf_url', '')}
+HTML: {paper.get('html_url', '')}
+ArXiv: {paper.get('entry_url', '')}
+
+Abstract:
+{paper.get('abstract', 'No abstract available')}
+
+Introduction Section:
+{introduction[:2000] if introduction else 'Introduction not available.'}
+
+Methodology Section:
+{methodology[:2500] if methodology else 'Methodology not available.'}
+
+Conclusion Section:
+{conclusion[:1500] if conclusion else 'Conclusion not available.'}
+
+Figures Identified:
+{figure_context}
+
+---
+
+Provide a comprehensive analysis focusing on:
+
+## Core Methodology & Architecture
+Based on the Methodology section, explain the main technical approach and innovations. Reference specific techniques, algorithms, or architectures mentioned. If figures illustrate the architecture, describe how they contribute to understanding.
+
+## Motivation & Problem Formulation
+From the Introduction, what problem does this paper address? Why is it important? What gap exists in current research?
+
+## Technical Contributions & Innovations
+What are the novel aspects? What specific problems do they solve? How do they differ from prior work?
+
+## Results & Evaluation
+From the Conclusion section, what were the key findings? What metrics/benchmarks were used? How does performance compare to baselines?
+
+## Strengths & Limitations
+Critical analysis: What are the strong points of the approach? What are potential weaknesses, assumptions, or limitations mentioned in the paper?
+
+## Practical Applications & Impact
+What are the real-world use cases? How might this research impact the field or be applied in practice?
+
+## Related Work Context
+How does this fit into the broader research landscape? What connections exist to other recent work?
+
+---
+
+Use markdown formatting. Be specific and technical. Reference the extracted sections to provide accurate analysis. When methodology or results are described, cite the relevant section (Introduction, Methodology, or Conclusion)."""
+
+        try:
+            # If vision model and figures available, include images
+            if supports_vision and figures:
+                messages = [
+                    {"role": "system", "content": "You are an expert AI research assistant who analyzes academic papers using structured text extraction and visual information. You can examine figures, diagrams, and charts alongside Introduction, Methodology, and Conclusion sections to provide comprehensive insights."},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt}
+                        ]
+                    }
+                ]
+
+                # Add up to 3 figures as images (only if they have image_data)
+                for fig in figures[:3]:
+                    if fig.get('image_data'):
+                        # Determine format
+                        if fig.get('image_format'):
+                            img_format = fig['image_format']
+                        else:
+                            # Extract from data URI or default to png
+                            img_data = fig['image_data']
+                            if img_data.startswith('data:image/'):
+                                img_format = img_data.split(';')[0].split('/')[-1]
+                            else:
+                                img_format = 'png'
+
+                        # Handle both base64 strings and data URIs
+                        if fig['image_data'].startswith('data:'):
+                            image_url = fig['image_data']
+                        else:
+                            image_url = f"data:image/{img_format};base64,{fig['image_data']}"
+
+                        messages[1]["content"].append({
+                            "type": "image_url",
+                            "image_url": {"url": image_url}
+                        })
+
+                logger.info(f"Analyzing with {len(figures[:3])} figures using vision model (with structured sections)")
+
+            else:
+                # Text-only analysis
+                messages = [
+                    {"role": "system", "content": "You are an expert AI research assistant who provides comprehensive analysis of academic papers using structured text extraction. You analyze Introduction, Methodology, and Conclusion sections separately to provide detailed insights."},
+                    {"role": "user", "content": prompt}
+                ]
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=3000
+            )
+
+            analysis = response.choices[0].message.content.strip()
+            logger.debug(f"Generated structured section analysis ({len(analysis)} chars, {len(figures)} figures)")
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error generating structured section analysis: {str(e)}")
+            # Fallback to figures-only analysis
+            logger.info("Falling back to figures-only analysis")
+            return self.generate_detailed_analysis_with_figures(paper, introduction, figures)
+
 
     def translate_to_chinese(self, text: str, content_type: str = "text") -> str:
         """
@@ -261,6 +838,8 @@ Provide ONLY the Chinese translation, no explanations or additional text."""
 Paper Title: {title}
 Authors: {authors}
 Abstract: {abstract}
+PDF: {pdf_url}
+ArXiv: {arxiv_url}
 
 Provide a clear, concise summary with:
 1. **Core Contribution** (1-2 sentences): What is the main innovation or finding?
@@ -278,6 +857,8 @@ Authors: {authors}
 Categories: {categories}
 ArXiv ID: {arxiv_id}
 Abstract: {abstract}
+PDF: {pdf_url}
+ArXiv: {arxiv_url}
 
 Provide a detailed analysis with the following sections:
 

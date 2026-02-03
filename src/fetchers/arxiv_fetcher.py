@@ -91,6 +91,9 @@ class ArxivFetcher:
         # Extract ArXiv ID
         arxiv_id = result.entry_id.split('/abs/')[-1].split('v')[0]
 
+        # Generate HTML URL
+        html_url = f"https://arxiv.org/html/{arxiv_id}"
+
         # Extract GitHub links from abstract or comments
         github_links = self._extract_github_links(result)
 
@@ -107,6 +110,7 @@ class ArxivFetcher:
             'categories': categories,
             'primary_category': result.primary_category.split('.')[-1] if result.primary_category else categories[0],
             'pdf_url': result.pdf_url,
+            'html_url': html_url,
             'entry_url': result.entry_id,
             'github_links': github_links,
             'comment': result.comment if result.comment else "",
