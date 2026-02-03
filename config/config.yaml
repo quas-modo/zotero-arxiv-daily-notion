@@ -127,7 +127,32 @@ html_extraction:
   enabled: true              # Enable HTML extraction as primary method
   prefer_html: true          # Try HTML first before falling back to PDF
   download_images: true      # Download images from HTML figures
-  timeout: 15                # HTTP request timeout (seconds)
+
+  # Timeout Configuration (backward compatible)
+  # Simple format: single timeout value for all requests
+  timeout: 30                # HTTP request timeout (seconds) - increased from 15s
+
+  # Advanced format (optional, overrides simple timeout if specified):
+  # timeouts:
+  #   head_request: 20       # HEAD request for availability check
+  #   get_html: 30           # GET request for HTML download
+  #   get_image: 25          # GET request for images
+  #   connect: 10            # TCP connection timeout
+
+  # Retry Configuration
+  retry:
+    enabled: true            # Enable automatic retries for transient failures
+    max_retries: 3           # Number of retry attempts (exponential backoff)
+    backoff_factor: 1.0      # Backoff multiplier: 1s, 2s, 4s
+    retry_on_status: [500, 502, 503, 504, 429]  # HTTP status codes to retry
+    retry_on_timeout: true   # Retry on timeout errors
+
+  # Connection Pooling
+  connection_pool:
+    pool_connections: 10     # Number of connection pools
+    pool_maxsize: 20         # Max connections per pool
+    pool_block: false        # Don't block when pool is full
+
   max_figures: 3             # Maximum number of figures to extract
   # Note: HTML extraction provides structured sections (Introduction, Methodology, Conclusion)
   # and better figure extraction with captions. Falls back to PDF if HTML unavailable.

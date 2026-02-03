@@ -613,6 +613,72 @@ pip install pymupdf  # Recommended for figure extraction
 - Without PyMuPDF: Uses PyPDF2 (text only, no figures)
 - All other features continue working
 
+**HTML Extraction (New in Feb 2026):**
+- ArXiv now provides HTML versions for ~80% of papers from 2024+
+- HTML extraction provides better structured content (Introduction, Methodology, Conclusion sections)
+- Automatically falls back to PDF if HTML unavailable
+
+**Configuration:**
+```yaml
+# config/config.yaml
+html_extraction:
+  enabled: true              # Enable HTML extraction as primary method
+  prefer_html: true          # Try HTML first before falling back to PDF
+  download_images: true      # Download images from HTML figures
+  timeout: 30                # HTTP request timeout (seconds)
+  max_figures: 3             # Maximum number of figures to extract
+
+  # Advanced timeout configuration (optional)
+  # timeouts:
+  #   head_request: 20       # HEAD request for availability check
+  #   get_html: 30           # GET request for HTML download
+  #   get_image: 25          # GET request for images
+  #   connect: 10            # TCP connection timeout
+
+  # Retry Configuration (handles transient failures)
+  retry:
+    enabled: true            # Enable automatic retries
+    max_retries: 3           # Number of retry attempts
+    backoff_factor: 1.0      # Exponential backoff: 1s, 2s, 4s
+    retry_on_status: [500, 502, 503, 504, 429]  # HTTP status codes to retry
+    retry_on_timeout: true   # Retry on timeout errors
+
+  # Connection Pooling (improves performance)
+  connection_pool:
+    pool_connections: 10     # Number of connection pools
+    pool_maxsize: 20         # Max connections per pool
+    pool_block: false        # Don't block when pool is full
+```
+
+**Troubleshooting timeouts:**
+
+If you experience timeout errors (especially on slow networks or during peak hours):
+
+1. **Quick fix** - Increase timeout:
+   ```yaml
+   html_extraction:
+     timeout: 45  # Increase from default 30s
+   ```
+
+2. **Disable retries** (if needed):
+   ```yaml
+   html_extraction:
+     retry:
+       enabled: false  # Disable retries (faster failure)
+   ```
+
+3. **Disable HTML extraction** (fallback to PDF only):
+   ```yaml
+   html_extraction:
+     enabled: false  # Skip HTML, use PDF directly
+   ```
+
+**Benefits of HTML extraction:**
+- ✅ Better structured sections (Introduction, Methodology, Conclusion)
+- ✅ More accurate figure extraction with captions
+- ✅ Faster processing (no PDF parsing overhead)
+- ✅ Automatic retry mechanism for transient failures
+
 ---
 
 ### 4. Vision-Based Analysis

@@ -31,13 +31,36 @@ class ContentExtractor:
         self.html_enabled = html_config.get('enabled', True)
         self.prefer_html = html_config.get('prefer_html', True)
         self.download_images = html_config.get('download_images', True)
-        self.timeout = html_config.get('timeout', 15)
         self.max_figures = html_config.get('max_figures', 3)
 
-        # Initialize extractors
+        # Parse timeout configuration (backward compatible)
+        timeout_config = html_config.get('timeout', 30)
+        if 'timeouts' in html_config:
+            # New format with granular timeouts
+            timeout_config = html_config['timeouts']
+
+        # Get retry configuration (with defaults)
+        retry_config = html_config.get('retry', {
+            'enabled': True,
+            'max_retries': 3,
+            'backoff_factor': 1.0,
+            'retry_on_status': [500, 502, 503, 504, 429],
+            'retry_on_timeout': True
+        })
+
+        # Get connection pool configuration (with defaults)
+        pool_config = html_config.get('connection_pool', {
+            'pool_connections': 10,
+            'pool_maxsize': 20,
+            'pool_block': False
+        })
+
+        # Initialize HTML extractor with enhanced config
         self.html_extractor = HTMLExtractor(
-            timeout=self.timeout,
-            max_figures=self.max_figures
+            timeout=timeout_config,
+            max_figures=self.max_figures,
+            retry_config=retry_config,
+            pool_config=pool_config
         )
 
     def extract_multimodal_content(self, paper: Dict) -> Dict:

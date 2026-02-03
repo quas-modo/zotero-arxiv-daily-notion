@@ -24,10 +24,28 @@ def test_html_extractor():
     print("Testing HTML Extractor")
     print("="*80 + "\n")
 
-    extractor = HTMLExtractor(timeout=15, max_figures=3)
+    # Load config to get proper timeout settings
+    config = load_config()
+    html_config = config.get('html_extraction', {})
+    timeout = html_config.get('timeout', 30)
+    max_figures = html_config.get('max_figures', 3)
+    retry_config = html_config.get('retry', {})
+    pool_config = html_config.get('connection_pool', {})
+
+    extractor = HTMLExtractor(
+        timeout=timeout,
+        max_figures=max_figures,
+        retry_config=retry_config,
+        pool_config=pool_config
+    )
 
     # Test paper: ArXiv's HTML announcement paper (known to have HTML)
     test_papers = [
+        {
+            'arxiv_id': '2602.02393',
+            'title': 'Test Paper 0 (Previously timing out - should now work)',
+            'html_url': 'https://arxiv.org/html/2602.02393'
+        },
         {
             'arxiv_id': '2402.08954',
             'title': 'Test Paper 1 (Recent paper with HTML)',

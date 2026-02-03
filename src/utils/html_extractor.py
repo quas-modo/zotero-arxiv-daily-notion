@@ -9,9 +9,10 @@ import re
 import logging
 import requests
 from bs4 import BeautifulSoup
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 import base64
 from io import BytesIO
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +20,129 @@ logger = logging.getLogger(__name__)
 class HTMLExtractor:
     """Extract structured content from ArXiv HTML papers."""
 
-    def __init__(self, timeout: int = 15, max_figures: int = 3):
+    def __init__(
+        self,
+        timeout: Union[int, Dict] = 30,
+        max_figures: int = 3,
+        retry_config: Dict = None,
+        pool_config: Dict = None
+    ):
         """
-        Initialize HTML extractor.
+        Initialize HTML extractor with enhanced timeout and retry support.
 
         Args:
-            timeout: HTTP request timeout in seconds
+            timeout: Timeout configuration (int for simple, dict for granular)
             max_figures: Maximum number of figures to extract
+            retry_config: Retry configuration dict
+            pool_config: Connection pool configuration dict
         """
-        self.timeout = timeout
         self.max_figures = max_figures
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (compatible; ArXivBot/1.0)'
+
+        # Parse timeout configuration (backward compatible)
+        self.timeouts = self._parse_timeout_config(timeout)
+
+        # Set up retry strategy
+        retry_config = retry_config or {
+            'enabled': True,
+            'max_retries': 3,
+            'backoff_factor': 1.0,
+            'retry_on_status': [500, 502, 503, 504, 429],
+            'retry_on_timeout': True
+        }
+        self.retry_strategy = self._create_retry_strategy(retry_config)
+
+        # Create session with optimized connection pooling
+        pool_config = pool_config or {
+            'pool_connections': 10,
+            'pool_maxsize': 20,
+            'pool_block': False
+        }
+        self.session = self._create_optimized_session(self.retry_strategy, pool_config)
+
+    def _parse_timeout_config(self, timeout_config: Union[int, Dict]) -> Dict[str, int]:
+        """
+        Parse timeout configuration (backward compatible).
+        Supports both old format (int) and new format (dict).
+
+        Args:
+            timeout_config: Integer timeout or dict with granular timeouts
+
+        Returns:
+            Dict with timeout values for different operations
+        """
+        if isinstance(timeout_config, int):
+            # Old format: single timeout value
+            return {
+                'head': timeout_config,
+                'get_html': timeout_config,
+                'get_image': timeout_config,
+                'connect': timeout_config // 2
+            }
+        else:
+            # New format: granular timeouts
+            return {
+                'head': timeout_config.get('head_request', 20),
+                'get_html': timeout_config.get('get_html', 30),
+                'get_image': timeout_config.get('get_image', 25),
+                'connect': timeout_config.get('connect', 10)
+            }
+
+    def _create_retry_strategy(self, retry_config: Dict):
+        """
+        Create urllib3 Retry strategy for automatic retries.
+
+        Args:
+            retry_config: Configuration dict with retry settings
+
+        Returns:
+            Retry object or None if disabled
+        """
+        from urllib3.util.retry import Retry
+
+        if not retry_config or not retry_config.get('enabled', True):
+            return None
+
+        return Retry(
+            total=retry_config.get('max_retries', 3),
+            backoff_factor=retry_config.get('backoff_factor', 1.0),
+            status_forcelist=retry_config.get('retry_on_status', [500, 502, 503, 504]),
+            allowed_methods=['HEAD', 'GET'],
+            raise_on_status=False
+        )
+
+    def _create_optimized_session(self, retry_strategy, pool_config: Dict):
+        """
+        Create requests session with connection pooling and retry logic.
+
+        Args:
+            retry_strategy: Retry strategy object
+            pool_config: Pool configuration dict
+
+        Returns:
+            Configured requests Session
+        """
+        from requests.adapters import HTTPAdapter
+
+        session = requests.Session()
+
+        # Configure adapter with retry and pool settings
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy if retry_strategy else 0,
+            pool_connections=pool_config.get('pool_connections', 10),
+            pool_maxsize=pool_config.get('pool_maxsize', 20),
+            pool_block=pool_config.get('pool_block', False)
+        )
+
+        # Mount for both HTTP and HTTPS
+        session.mount('http://', adapter)
+        session.mount('https://', adapter)
+
+        # Set user agent
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (compatible; ResearchAssistant/1.0)'
         })
+
+        return session
 
     @staticmethod
     def generate_html_url(arxiv_id: str) -> str:
@@ -51,7 +161,7 @@ class HTMLExtractor:
 
     def check_html_available(self, html_url: str) -> bool:
         """
-        Check if HTML version is available for the paper.
+        Check if HTML version is available for the paper (with retry logic).
 
         Args:
             html_url: ArXiv HTML URL to check
@@ -59,19 +169,43 @@ class HTMLExtractor:
         Returns:
             True if HTML available, False otherwise
         """
+        start_time = time.time()
+
         try:
-            response = self.session.head(html_url, timeout=self.timeout, allow_redirects=True)
-            # ArXiv returns 200 for available HTML, 404 for unavailable
+            # Use granular timeout: (connect_timeout, read_timeout)
+            timeout = (self.timeouts['connect'], self.timeouts['head'])
+
+            response = self.session.head(html_url, timeout=timeout, allow_redirects=True)
+
+            elapsed = time.time() - start_time
             available = response.status_code == 200
-            logger.info(f"HTML availability check for {html_url}: {available} (status: {response.status_code})")
+
+            logger.info(
+                f"HTML availability check for {html_url}: {available} "
+                f"(status: {response.status_code}, elapsed: {elapsed:.2f}s)"
+            )
+
             return available
+
+        except requests.Timeout as e:
+            elapsed = time.time() - start_time
+            logger.warning(
+                f"HTML availability check timed out for {html_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
+            return False
+
         except requests.RequestException as e:
-            logger.warning(f"Failed to check HTML availability for {html_url}: {e}")
+            elapsed = time.time() - start_time
+            logger.warning(
+                f"Failed to check HTML availability for {html_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
             return False
 
     def _download_html(self, html_url: str) -> Optional[str]:
         """
-        Download HTML content from URL.
+        Download HTML content with retry and proper timeout.
 
         Args:
             html_url: ArXiv HTML URL
@@ -79,13 +213,36 @@ class HTMLExtractor:
         Returns:
             HTML content string or None if failed
         """
+        start_time = time.time()
+
         try:
-            response = self.session.get(html_url, timeout=self.timeout)
+            timeout = (self.timeouts['connect'], self.timeouts['get_html'])
+
+            response = self.session.get(html_url, timeout=timeout)
             response.raise_for_status()
-            logger.info(f"Successfully downloaded HTML from {html_url} ({len(response.text)} chars)")
+
+            elapsed = time.time() - start_time
+            logger.info(
+                f"Successfully downloaded HTML from {html_url} "
+                f"({len(response.text)} chars, {elapsed:.2f}s)"
+            )
+
             return response.text
+
+        except requests.Timeout as e:
+            elapsed = time.time() - start_time
+            logger.error(
+                f"Timeout downloading HTML from {html_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
+            return None
+
         except requests.RequestException as e:
-            logger.error(f"Failed to download HTML from {html_url}: {e}")
+            elapsed = time.time() - start_time
+            logger.error(
+                f"Failed to download HTML from {html_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
             return None
 
     def _find_section_by_header(self, soup: BeautifulSoup, patterns: List[str]) -> Optional[str]:
@@ -189,7 +346,7 @@ class HTMLExtractor:
 
     def _download_image(self, img_url: str) -> Optional[str]:
         """
-        Download image and convert to base64.
+        Download image with retry and proper timeout.
 
         Args:
             img_url: Image URL
@@ -197,9 +354,15 @@ class HTMLExtractor:
         Returns:
             Base64 encoded image string or None if failed
         """
+        start_time = time.time()
+
         try:
-            response = self.session.get(img_url, timeout=self.timeout)
+            timeout = (self.timeouts['connect'], self.timeouts['get_image'])
+
+            response = self.session.get(img_url, timeout=timeout)
             response.raise_for_status()
+
+            elapsed = time.time() - start_time
 
             # Convert to base64
             img_base64 = base64.b64encode(response.content).decode('utf-8')
@@ -208,11 +371,27 @@ class HTMLExtractor:
             content_type = response.headers.get('content-type', 'image/png')
             media_type = content_type.split('/')[-1]
 
-            logger.debug(f"Downloaded image: {len(response.content)} bytes, type: {media_type}")
+            logger.debug(
+                f"Downloaded image: {len(response.content)} bytes, "
+                f"type: {media_type}, elapsed: {elapsed:.2f}s"
+            )
+
             return f"data:image/{media_type};base64,{img_base64}"
 
+        except requests.Timeout as e:
+            elapsed = time.time() - start_time
+            logger.warning(
+                f"Timeout downloading image from {img_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
+            return None
+
         except requests.RequestException as e:
-            logger.warning(f"Failed to download image from {img_url}: {e}")
+            elapsed = time.time() - start_time
+            logger.warning(
+                f"Failed to download image from {img_url} "
+                f"after {elapsed:.2f}s: {e}"
+            )
             return None
 
     def extract_figures(self, html_content: str, download_images: bool = True) -> List[Dict]:
