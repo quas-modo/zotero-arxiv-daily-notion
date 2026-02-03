@@ -163,34 +163,61 @@ class NotionClient:
         return properties
 
     def _format_content_blocks(self, paper: Dict) -> List[Dict]:
-        """Format paper content as Notion blocks"""
+        """Format paper content as Notion blocks with rich formatting"""
 
         blocks = []
 
-        # Add abstract
-        if paper.get('abstract'):
+        # Add quick info callout
+        quick_info = []
+        if paper.get('published_date'):
+            pub_date = paper['published_date']
+            if isinstance(pub_date, datetime):
+                quick_info.append(f"📅 Published: {pub_date.strftime('%Y-%m-%d')}")
+        if paper.get('categories'):
+            quick_info.append(f"🏷️ Categories: {', '.join(paper['categories'][:3])}")
+        if paper.get('relevance_score'):
+            quick_info.append(f"⭐ Relevance Score: {paper['relevance_score']:.2f}")
+
+        if quick_info:
             blocks.append({
                 "object": "block",
-                "type": "heading_2",
-                "heading_2": {
-                    "rich_text": [{"text": {"content": "Abstract"}}]
-                }
-            })
-            blocks.append({
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                    "rich_text": [{"text": {"content": paper['abstract'][:2000]}}]
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"text": {"content": " | ".join(quick_info)}}],
+                    "icon": {"emoji": "📊"},
+                    "color": "gray_background"
                 }
             })
 
-        # Add summary if available
+        # Add abstract in a toggle block
+        if paper.get('abstract'):
+            blocks.append({
+                "object": "block",
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{"text": {"content": "📄 Abstract", "annotations": {"bold": True}}}],
+                    "color": "default",
+                    "children": [
+                        {
+                            "object": "block",
+                            "type": "quote",
+                            "quote": {
+                                "rich_text": [{"text": {"content": paper['abstract'][:2000]}}],
+                                "color": "default"
+                            }
+                        }
+                    ]
+                }
+            })
+
+        # Add summary as a callout if available
         if paper.get('summary'):
             blocks.append({
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "Summary (TL;DR)"}}]
+                    "rich_text": [{"text": {"content": "✨ Summary (TL;DR)"}}],
+                    "color": "blue"
                 }
             })
 
@@ -199,9 +226,11 @@ class NotionClient:
             for chunk in self._split_text(summary_text, 2000):
                 blocks.append({
                     "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"text": {"content": chunk}}]
+                    "type": "callout",
+                    "callout": {
+                        "rich_text": [{"text": {"content": chunk}}],
+                        "icon": {"emoji": "✨"},
+                        "color": "blue_background"
                     }
                 })
 
@@ -209,9 +238,16 @@ class NotionClient:
         if paper.get('detailed_analysis'):
             blocks.append({
                 "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+
+            blocks.append({
+                "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "Detailed Analysis"}}]
+                    "rich_text": [{"text": {"content": "🔍 Detailed Analysis"}}],
+                    "color": "default"
                 }
             })
 
@@ -230,43 +266,57 @@ class NotionClient:
             "object": "block",
             "type": "heading_1",
             "heading_1": {
-                "rich_text": [{"text": {"content": "中文翻译 (Chinese Translation)"}}]
+                "rich_text": [{"text": {"content": "🇨🇳 中文翻译 (Chinese Translation)"}}],
+                "color": "red"
             }
         })
 
-        # Add Chinese abstract
+        # Add Chinese abstract in toggle
         if paper.get('abstract_zh'):
             blocks.append({
                 "object": "block",
-                "type": "heading_2",
-                "heading_2": {
-                    "rich_text": [{"text": {"content": "摘要 (Abstract)"}}]
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{"text": {"content": "📄 摘要 (Abstract)", "annotations": {"bold": True}}}],
+                    "color": "default",
+                    "children": [
+                        {
+                            "object": "block",
+                            "type": "quote",
+                            "quote": {
+                                "rich_text": [{"text": {"content": paper['abstract_zh'][:2000]}}],
+                                "color": "default"
+                            }
+                        }
+                    ] + ([{
+                        "object": "block",
+                        "type": "quote",
+                        "quote": {
+                            "rich_text": [{"text": {"content": chunk}}],
+                            "color": "default"
+                        }
+                    } for chunk in self._split_text(paper['abstract_zh'], 2000)[1:]] if len(paper['abstract_zh']) > 2000 else [])
                 }
             })
-            for chunk in self._split_text(paper['abstract_zh'], 2000):
-                blocks.append({
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"text": {"content": chunk}}]
-                    }
-                })
 
-        # Add Chinese summary
+        # Add Chinese summary as callout
         if paper.get('summary_zh'):
             blocks.append({
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "概要 (Summary)"}}]
+                    "rich_text": [{"text": {"content": "✨ 概要 (Summary)"}}],
+                    "color": "orange"
                 }
             })
             for chunk in self._split_text(paper['summary_zh'], 2000):
                 blocks.append({
                     "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"text": {"content": chunk}}]
+                    "type": "callout",
+                    "callout": {
+                        "rich_text": [{"text": {"content": chunk}}],
+                        "icon": {"emoji": "💫"},
+                        "color": "orange_background"
                     }
                 })
 
@@ -276,37 +326,68 @@ class NotionClient:
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "详细分析 (Detailed Analysis)"}}]
+                    "rich_text": [{"text": {"content": "🔍 详细分析 (Detailed Analysis)"}}],
+                    "color": "default"
                 }
             })
             blocks.extend(self._parse_markdown_to_blocks(paper['detailed_analysis_zh']))
 
-        # Add links section
-        links = []
-        if paper.get('pdf_url'):
-            links.append(f"📄 PDF: {paper['pdf_url']}")
-        if paper.get('entry_url'):
-            links.append(f"🔗 ArXiv: {paper['entry_url']}")
-        if paper.get('github_links'):
-            for i, link in enumerate(paper['github_links'][:3], 1):
-                links.append(f"💻 GitHub: {link}")
+        # Add links section with proper formatting
+        if paper.get('pdf_url') or paper.get('entry_url') or paper.get('github_links'):
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
 
-        if links:
             blocks.append({
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "Links"}}]
+                    "rich_text": [{"text": {"content": "🔗 Links & Resources"}}],
+                    "color": "default"
                 }
             })
-            for link_text in links:
+
+            # PDF Link
+            if paper.get('pdf_url'):
                 blocks.append({
                     "object": "block",
                     "type": "paragraph",
                     "paragraph": {
-                        "rich_text": [{"text": {"content": link_text}}]
+                        "rich_text": [
+                            {"text": {"content": "📄 PDF: "}},
+                            {"text": {"content": paper['pdf_url'], "link": {"url": paper['pdf_url']}}}
+                        ]
                     }
                 })
+
+            # ArXiv Link
+            if paper.get('entry_url'):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"text": {"content": "🔗 ArXiv: "}},
+                            {"text": {"content": paper['entry_url'], "link": {"url": paper['entry_url']}}}
+                        ]
+                    }
+                })
+
+            # GitHub Links
+            if paper.get('github_links'):
+                for i, link in enumerate(paper['github_links'][:3], 1):
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {"text": {"content": f"💻 GitHub ({i}): "}},
+                                {"text": {"content": link, "link": {"url": link}}}
+                            ]
+                        }
+                    })
 
         return blocks
 
@@ -330,88 +411,279 @@ class NotionClient:
         return chunks
 
     def _parse_markdown_to_blocks(self, text: str) -> List[Dict]:
-        """Parse markdown-style text into Notion blocks"""
+        """Parse markdown-style text into rich Notion blocks with proper formatting"""
         blocks = []
         lines = text.split('\n')
 
+        i = 0
         current_paragraph = []
+        in_code_block = False
+        code_lines = []
+        code_language = ""
 
-        for line in lines:
-            line = line.strip()
+        def flush_paragraph():
+            """Helper to add accumulated paragraph lines as blocks"""
+            if current_paragraph:
+                para_text = '\n'.join(current_paragraph)
+                rich_text = self._parse_inline_formatting(para_text)
+                for chunk_rich_text in self._split_rich_text(rich_text, 2000):
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": chunk_rich_text
+                        }
+                    })
+                current_paragraph.clear()
 
-            # Skip empty lines
-            if not line:
-                if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
-                    for chunk in self._split_text(para_text, 2000):
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Code block start/end
+            if stripped.startswith('```'):
+                flush_paragraph()
+
+                if not in_code_block:
+                    # Start code block
+                    in_code_block = True
+                    code_language = stripped[3:].strip() or "plain text"
+                    code_lines = []
+                else:
+                    # End code block
+                    in_code_block = False
+                    code_text = '\n'.join(code_lines)
+                    for chunk in self._split_text(code_text, 2000):
                         blocks.append({
                             "object": "block",
-                            "type": "paragraph",
-                            "paragraph": {
-                                "rich_text": [{"text": {"content": chunk}}]
+                            "type": "code",
+                            "code": {
+                                "rich_text": [{"text": {"content": chunk}}],
+                                "language": code_language if code_language in ["python", "javascript", "java", "typescript", "cpp", "c", "go", "rust", "ruby", "php", "sql", "bash", "shell"] else "plain text"
                             }
                         })
-                    current_paragraph = []
+                    code_lines = []
+                i += 1
+                continue
+
+            # Inside code block
+            if in_code_block:
+                code_lines.append(line)
+                i += 1
+                continue
+
+            # Empty line
+            if not stripped:
+                flush_paragraph()
+                i += 1
+                continue
+
+            # Heading 1 (#)
+            if stripped.startswith('# ') and not stripped.startswith('## '):
+                flush_paragraph()
+                blocks.append({
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {
+                        "rich_text": [{"text": {"content": stripped[2:][:2000]}}],
+                        "color": "blue"
+                    }
+                })
+                i += 1
                 continue
 
             # Heading 2 (##)
-            if line.startswith('## '):
-                if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
-                    for chunk in self._split_text(para_text, 2000):
-                        blocks.append({
-                            "object": "block",
-                            "type": "paragraph",
-                            "paragraph": {
-                                "rich_text": [{"text": {"content": chunk}}]
-                            }
-                        })
-                    current_paragraph = []
-
+            if stripped.startswith('## ') and not stripped.startswith('### '):
+                flush_paragraph()
                 blocks.append({
                     "object": "block",
                     "type": "heading_3",
                     "heading_3": {
-                        "rich_text": [{"text": {"content": line[3:][:2000]}}]
+                        "rich_text": [{"text": {"content": stripped[3:][:2000]}}],
+                        "color": "default"
                     }
                 })
-            # Bullet point
-            elif line.startswith('- ') or line.startswith('* '):
-                if current_paragraph:
-                    para_text = ' '.join(current_paragraph)
-                    for chunk in self._split_text(para_text, 2000):
-                        blocks.append({
-                            "object": "block",
-                            "type": "paragraph",
-                            "paragraph": {
-                                "rich_text": [{"text": {"content": chunk}}]
-                            }
-                        })
-                    current_paragraph = []
+                i += 1
+                continue
 
+            # Heading 3 (###)
+            if stripped.startswith('### '):
+                flush_paragraph()
+                # Use toggle block for subsections
+                content = stripped[4:][:2000]
+                blocks.append({
+                    "object": "block",
+                    "type": "toggle",
+                    "toggle": {
+                        "rich_text": [{"text": {"content": content, "annotations": {"bold": True}}}],
+                        "color": "gray_background"
+                    }
+                })
+                i += 1
+                continue
+
+            # Callout/Quote (>)
+            if stripped.startswith('> '):
+                flush_paragraph()
+                quote_lines = [stripped[2:]]
+                i += 1
+                while i < len(lines) and lines[i].strip().startswith('> '):
+                    quote_lines.append(lines[i].strip()[2:])
+                    i += 1
+                quote_text = ' '.join(quote_lines)
+                blocks.append({
+                    "object": "block",
+                    "type": "callout",
+                    "callout": {
+                        "rich_text": [{"text": {"content": quote_text[:2000]}}],
+                        "icon": {"emoji": "💡"},
+                        "color": "blue_background"
+                    }
+                })
+                continue
+
+            # Numbered list (1. 2. etc)
+            if stripped and stripped[0].isdigit() and '. ' in stripped[:4]:
+                flush_paragraph()
+                dot_pos = stripped.find('. ')
+                content = stripped[dot_pos+2:]
+                rich_text = self._parse_inline_formatting(content)
+                blocks.append({
+                    "object": "block",
+                    "type": "numbered_list_item",
+                    "numbered_list_item": {
+                        "rich_text": rich_text if len(str(rich_text)) <= 2000 else [{"text": {"content": content[:2000]}}]
+                    }
+                })
+                i += 1
+                continue
+
+            # Bullet point (- or *)
+            if stripped.startswith('- ') or stripped.startswith('* '):
+                flush_paragraph()
+                content = stripped[2:]
+                rich_text = self._parse_inline_formatting(content)
                 blocks.append({
                     "object": "block",
                     "type": "bulleted_list_item",
                     "bulleted_list_item": {
-                        "rich_text": [{"text": {"content": line[2:][:2000]}}]
+                        "rich_text": rich_text if len(str(rich_text)) <= 2000 else [{"text": {"content": content[:2000]}}]
                     }
                 })
-            else:
-                current_paragraph.append(line)
+                i += 1
+                continue
 
-        # Add remaining paragraph
-        if current_paragraph:
-            para_text = ' '.join(current_paragraph)
-            for chunk in self._split_text(para_text, 2000):
+            # Divider (---)
+            if stripped in ['---', '***', '___']:
+                flush_paragraph()
                 blocks.append({
                     "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"text": {"content": chunk}}]
-                    }
+                    "type": "divider",
+                    "divider": {}
                 })
+                i += 1
+                continue
+
+            # Regular paragraph
+            current_paragraph.append(line)
+            i += 1
+
+        # Flush any remaining paragraph
+        flush_paragraph()
 
         return blocks
+
+    def _parse_inline_formatting(self, text: str) -> List[Dict]:
+        """Parse inline markdown formatting (bold, italic, code) into Notion rich text"""
+        import re
+
+        # For simplicity, handle basic formatting
+        # This is a simplified version - a full parser would be more complex
+        rich_text = []
+
+        # Split by inline code first (backticks)
+        code_pattern = r'`([^`]+)`'
+        parts = re.split(code_pattern, text)
+
+        for idx, part in enumerate(parts):
+            if not part:
+                continue
+
+            # Odd indices are code (inside backticks)
+            if idx % 2 == 1:
+                rich_text.append({
+                    "text": {"content": part[:2000]},
+                    "annotations": {"code": True}
+                })
+                continue
+
+            # Parse bold and italic
+            # **bold** or __bold__
+            bold_pattern = r'\*\*(.+?)\*\*|__(.+?)__'
+            # *italic* or _italic_
+            italic_pattern = r'\*(.+?)\*|_(.+?)_'
+
+            # For simplicity, just handle bold
+            segments = re.split(bold_pattern, part)
+            for seg_idx, segment in enumerate(segments):
+                if not segment:
+                    continue
+
+                # Check if this is a captured group (bold text)
+                if seg_idx % 3 in [1, 2] and segment:
+                    rich_text.append({
+                        "text": {"content": segment[:2000]},
+                        "annotations": {"bold": True}
+                    })
+                elif seg_idx % 3 == 0:
+                    # Handle italic in remaining text
+                    italic_segments = re.split(italic_pattern, segment)
+                    for it_idx, it_seg in enumerate(italic_segments):
+                        if not it_seg:
+                            continue
+                        if it_idx % 3 in [1, 2] and it_seg:
+                            rich_text.append({
+                                "text": {"content": it_seg[:2000]},
+                                "annotations": {"italic": True}
+                            })
+                        elif it_idx % 3 == 0:
+                            rich_text.append({
+                                "text": {"content": it_seg[:2000]}
+                            })
+
+        # Fallback if parsing failed
+        if not rich_text:
+            rich_text = [{"text": {"content": text[:2000]}}]
+
+        return rich_text
+
+    def _split_rich_text(self, rich_text: List[Dict], max_length: int = 2000) -> List[List[Dict]]:
+        """Split rich text array into chunks that fit Notion's limit"""
+        # Simplified: just return as single chunk if not too long
+        total_length = sum(len(rt.get("text", {}).get("content", "")) for rt in rich_text)
+        if total_length <= max_length:
+            return [rich_text]
+
+        # If too long, fall back to simple splitting
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for rt in rich_text:
+            content = rt.get("text", {}).get("content", "")
+            if current_length + len(content) > max_length:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = [rt]
+                current_length = len(content)
+            else:
+                current_chunk.append(rt)
+                current_length += len(content)
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks if chunks else [[{"text": {"content": ""}}]]
 
     def batch_create_entries(self, papers: List[Dict]) -> List[Dict]:
         """
