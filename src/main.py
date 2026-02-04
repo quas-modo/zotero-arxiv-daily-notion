@@ -70,8 +70,8 @@ def main(dry_run: bool = False, max_papers: int = None, deep_dive: bool = None):
         max_results=arxiv_config.get('max_results', 50)
     )
 
-    papers = fetcher.fetch_daily_papers(days_back=7)
-    print(f"✓ Found {len(papers)} papers from the last 7 days\n")
+    papers = fetcher.fetch_daily_papers(days_back=5)
+    print(f"✓ Found {len(papers)} papers from the last 5 days\n")
 
     if not papers:
         logger.warning("No papers found. Exiting.")
@@ -236,7 +236,7 @@ def main(dry_run: bool = False, max_papers: int = None, deep_dive: bool = None):
     else:
         try:
             analyzer = LLMAnalyzer(
-                model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+                model=os.getenv('OPENAI_MODEL', 'gpt-4o'),
                 summary_prompt_template=llm_config.get('summary_prompt'),
                 detailed_prompt_template=llm_config.get('detailed_prompt'),
                 config=config  # Pass full config for ContentExtractor
@@ -248,11 +248,11 @@ def main(dry_run: bool = False, max_papers: int = None, deep_dive: bool = None):
 
             if use_deep_dive:
                 print(f"  🌐 Deep Dive Mode ENABLED - Using web search for context enrichment")
-                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o')}")
                 print(f"     Note: This will take longer but provides richer context\n")
             else:
                 print(f"  📄 Standard Mode - PDF-based analysis only")
-                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+                print(f"     Model: {os.getenv('OPENAI_MODEL', 'gpt-4o')}")
                 print(f"     Tip: Use --deep-dive for web search enrichment\n")
 
             analyzed_papers = []

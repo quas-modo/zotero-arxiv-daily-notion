@@ -220,6 +220,13 @@ class SimilarityFilter:
             scores = [p['similarity_score'] for p in filtered_papers]
             logger.info(f"Similarity scores - Min: {min(scores):.3f}, Max: {max(scores):.3f}, Avg: {np.mean(scores):.3f}")
 
+        # Log selected papers with ranking
+        logger.info(f"Selected {len(filtered_papers)} papers after similarity filtering")
+        for i, paper in enumerate(filtered_papers, 1):
+            title = paper.get('title', 'Unknown')[:80]
+            similarity = paper.get('similarity_score', 0.0)
+            logger.info(f"  #{i} [{similarity:.3f}] {title}...")
+
         return filtered_papers
 
     def clear_cache(self):

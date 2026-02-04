@@ -1,6 +1,13 @@
 """Tests for ArXiv fetcher"""
 
+import sys
+from pathlib import Path
 import unittest
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from src.fetchers.arxiv_fetcher import ArxivFetcher
 
 

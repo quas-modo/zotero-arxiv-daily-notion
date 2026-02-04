@@ -1,6 +1,7 @@
 """Notion API client for paper management"""
 
 import os
+import re
 from typing import Dict, List, Optional
 from datetime import datetime
 from notion_client import Client
@@ -50,13 +51,13 @@ class NotionClient:
         """
         logger.info(f"Creating Notion entry for: {paper.get('title', 'Unknown')[:60]}...")
 
+        # Prepare properties
+        properties = self._format_properties(paper)
+
+        # Prepare content blocks
+        children = self._format_content_blocks(paper)
+
         try:
-            # Prepare properties
-            properties = self._format_properties(paper)
-
-            # Prepare content blocks
-            children = self._format_content_blocks(paper)
-
             # Create page
             response = self.client.pages.create(
                 parent={"database_id": self.database_id},
@@ -68,7 +69,30 @@ class NotionClient:
             return response
 
         except Exception as e:
-            logger.error(f"Error creating Notion entry: {str(e)}")
+            error_msg = str(e)
+            # If error is about missing property, try to remove it and retry once
+            if "is not a property that exists" in error_msg:
+                # Extract property name from error message
+                match = re.search(r'"([^"]+)" is not a property', error_msg)
+                if match:
+                    missing_prop = match.group(1)
+                    logger.warning(f"Property '{missing_prop}' not found in database, removing and retrying")
+                    properties.pop(missing_prop, None)
+                    
+                    # Retry without the missing property
+                    try:
+                        response = self.client.pages.create(
+                            parent={"database_id": self.database_id},
+                            properties=properties,
+                            children=children
+                        )
+                        logger.info(f"✓ Notion entry created after removing invalid property: {response['id']}")
+                        return response
+                    except Exception as retry_error:
+                        logger.error(f"Error creating Notion entry after retry: {str(retry_error)}")
+                        raise
+            
+            logger.error(f"Error creating Notion entry: {error_msg}")
             raise
 
     def _format_properties(self, paper: Dict) -> Dict:
@@ -234,54 +258,24 @@ class NotionClient:
             }
         })
 
-        # Add Chinese abstract in toggle
+        # Add Chinese abstract as callout
         if paper.get('abstract_zh'):
-            blocks.append({
-                "object": "block",
-                "type": "toggle",
-                "toggle": {
-                    "rich_text": [{"text": {"content": "📄 摘要 (Abstract)"}}],
-                    "color": "default",
-                    "children": [
-                        {
-                            "object": "block",
-                            "type": "quote",
-                            "quote": {
-                                "rich_text": [{"text": {"content": paper['abstract_zh'][:2000]}}],
-                                "color": "default"
-                            }
-                        }
-                    ] + ([{
-                        "object": "block",
-                        "type": "quote",
-                        "quote": {
-                            "rich_text": [{"text": {"content": chunk}}],
-                            "color": "default"
-                        }
-                    } for chunk in self._split_text(paper['abstract_zh'], 2000)[1:]] if len(paper['abstract_zh']) > 2000 else [])
-                }
-            })
-
-        # Add Chinese introduction (from PDF extraction)
-        if paper.get('introduction_zh'):
             blocks.append({
                 "object": "block",
                 "type": "heading_2",
                 "heading_2": {
-                    "rich_text": [{"text": {"content": "📖 引言 (Introduction)"}}],
-                    "color": "purple"
+                    "rich_text": [{"text": {"content": "📄 摘要 (Abstract)"}}],
+                    "color": "default"
                 }
             })
-
-            # Use extracted introduction from PDF
-            intro_text = paper['introduction_zh']
-            for chunk in self._split_text(intro_text, 2000):
+            for chunk in self._split_text(paper['abstract_zh'], 2000):
                 blocks.append({
                     "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
+                    "type": "callout",
+                    "callout": {
                         "rich_text": self._parse_inline_formatting(chunk),
-                        "color": "default"
+                        "icon": {"emoji": "📋"},
+                        "color": "default_background"
                     }
                 })
 
@@ -306,6 +300,29 @@ class NotionClient:
                     }
                 })
 
+        # Add Chinese introduction (from PDF extraction)
+        if paper.get('introduction_zh'):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "📖 引言 (Introduction)"}}],
+                    "color": "purple"
+                }
+            })
+
+            # Use extracted introduction from PDF
+            intro_text = paper['introduction_zh']
+            for chunk in self._split_text(intro_text, 4000):
+                blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": self._parse_inline_formatting(chunk),
+                        "color": "default"
+                    }
+                })
+
         # Add Chinese detailed analysis
         if paper.get('detailed_analysis_zh'):
             blocks.append({
@@ -323,6 +340,65 @@ class NotionClient:
                 }
             })
             blocks.extend(self._parse_markdown_to_blocks(paper['detailed_analysis_zh']))
+
+
+        # Add figures section if figures are available
+        if paper.get('figures') and len(paper['figures']) > 0:
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"text": {"content": "🖼️ Figures"}}],
+                    "color": "green"
+                }
+            })
+
+            # Add each figure with caption
+            for fig in paper['figures']:
+                figure_num = fig.get('figure_number', fig.get('figure_num', '?'))
+                caption = fig.get('caption', 'No caption available')
+                caption_zh = fig.get('caption_zh', '')
+                image_url = fig.get('image_url', '')
+
+                # Add figure image block
+                if image_url:
+                    blocks.append({
+                        "object": "block",
+                        "type": "image",
+                        "image": {
+                            "type": "external",
+                            "external": {
+                                "url": image_url
+                            }
+                        }
+                    })
+
+                # Add Chinese caption if available
+                if caption_zh:
+                    blocks.append({
+                        "object": "block",
+                        "type": "quote",
+                        "quote": {
+                            "rich_text": [{"text": {"content": f"图 {figure_num}: {caption_zh}"}}],
+                            "color": "default"
+                        }
+                    })
+
+                # Add English caption as quote block
+                blocks.append({
+                    "object": "block",
+                    "type": "quote",
+                    "quote": {
+                        "rich_text": [{"text": {"content": f"Figure {figure_num}: {caption}"}}],
+                        "color": "gray_background"
+                    }
+                })
+
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
 
         # ========================================
         # ENGLISH CONTENT SECOND

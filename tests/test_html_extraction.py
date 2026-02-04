@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.html_extractor import HTMLExtractor
 from src.utils.content_extractor import ContentExtractor
@@ -42,19 +43,14 @@ def test_html_extractor():
     # Test paper: ArXiv's HTML announcement paper (known to have HTML)
     test_papers = [
         {
-            'arxiv_id': '2602.02393',
-            'title': 'Test Paper 0 (Previously timing out - should now work)',
-            'html_url': 'https://arxiv.org/html/2602.02393'
+            'arxiv_id': '2601.21998',
+            'title': 'Causal World Modeling for Robot Control',
+            'html_url': 'https://arxiv.org/html/2601.21998'
         },
         {
-            'arxiv_id': '2402.08954',
-            'title': 'Test Paper 1 (Recent paper with HTML)',
-            'html_url': 'https://arxiv.org/html/2402.08954'
-        },
-        {
-            'arxiv_id': '2401.12345',  # May or may not exist
-            'title': 'Test Paper 2 (Testing fallback)',
-            'html_url': 'https://arxiv.org/html/2401.12345'
+            'arxiv_id': '2601.16163',
+            'title': 'Cosmos Policy: Fine-Tuning Video Models for Visuomotor Control and Planning',
+            'html_url': 'https://arxiv.org/html/2601.16163'
         }
     ]
 
@@ -107,11 +103,10 @@ def test_content_extractor():
     extractor = ContentExtractor(config=config)
 
     # Test paper with both HTML and PDF
-    test_paper = {
-        'arxiv_id': '2402.08954',
-        'title': 'Test Paper with HTML',
-        'html_url': 'https://arxiv.org/html/2402.08954',
-        'pdf_url': 'https://arxiv.org/pdf/2402.08954.pdf'
+    test_paper = {      
+        'arxiv_id': '2601.16163',
+        'title': 'Cosmos Policy: Fine-Tuning Video Models for Visuomotor Control and Planning',
+        'html_url': 'https://arxiv.org/html/2601.16163'
     }
 
     print(f"📄 Testing: {test_paper['title']}")

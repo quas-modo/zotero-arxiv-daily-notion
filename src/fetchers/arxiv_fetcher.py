@@ -58,6 +58,9 @@ class ArxivFetcher:
                 # Fetch results
                 results = self.client.results(search)
 
+                # Count papers added for this category (new papers only)
+                category_count = 0
+
                 for result in results:
                     # Filter by submission date
                     if result.published.replace(tzinfo=None) < start_date:
@@ -66,10 +69,13 @@ class ArxivFetcher:
                     paper_dict = self._parse_paper(result)
 
                     # Avoid duplicates (papers can be in multiple categories)
-                    if not any(p['arxiv_id'] == paper_dict['arxiv_id'] for p in papers):
+                    is_new_paper = not any(p['arxiv_id'] == paper_dict['arxiv_id'] for p in papers)
+                    if is_new_paper:
                         papers.append(paper_dict)
+                        # Count only newly added papers from this category search
+                        category_count += 1
 
-                logger.info(f"Found {len([p for p in papers if category in p['categories']])} papers in {category}")
+                logger.info(f"Found {category_count} papers in {category}")
 
             except Exception as e:
                 logger.error(f"Error fetching papers from {category}: {str(e)}")

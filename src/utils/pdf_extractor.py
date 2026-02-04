@@ -140,7 +140,8 @@ class PDFTextExtractor:
                             'image_format': image_ext,
                             'caption': caption,
                             'page_num': page_num + 1,
-                            'figure_num': figure_count + 1,
+                            'figure_number': str(figure_count + 1),  # Use figure_number for consistency with HTML extractor
+                            'sequential_index': figure_count + 1,
                             'size_bytes': len(image_bytes)
                         })
 

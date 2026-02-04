@@ -81,6 +81,7 @@ filtering:
 # LLM Analysis Settings
 llm:
   provider: "openai"
+  include_detailed_analysis: false
 
   # Deep Dive Mode with Web Search
   deep_dive_mode: false  # Enable web search for context enrichment (requires gpt-4o or later)

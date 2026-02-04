@@ -60,6 +60,38 @@ def save_analyzed_papers(papers: List[Dict], output_dir: str = "data/outputs"):
             if paper.get('abstract'):
                 f.write(f"### Abstract\n\n{paper['abstract']}\n\n")
 
+            # Figures Section
+            if paper.get('figures') and len(paper['figures']) > 0:
+                f.write(f"### Figures\n\n")
+                for fig in paper['figures']:
+                    figure_num = fig.get('figure_number', fig.get('figure_num', '?'))
+                    caption = fig.get('caption', 'No caption available')
+                    image_url = fig.get('image_url', '')
+
+                    # Use image URL (preferred - no download needed)
+                    if image_url:
+                        f.write(f"![Figure {figure_num}]({image_url})\n\n")
+                        # Add caption
+                        f.write(f"**Figure {figure_num}:** {caption}\n\n")
+                    else:
+                        # Fallback: use base64 data if URL not available (PDF extraction)
+                        image_data = fig.get('image_data', '')
+                        if image_data:
+                            # For base64, check if it's already a data URI
+                            if image_data.startswith('data:'):
+                                f.write(f"![Figure {figure_num}]({image_data})\n\n")
+                            else:
+                                # Assume PNG format if not specified
+                                image_format = fig.get('image_format', 'png')
+                                f.write(f"![Figure {figure_num}](data:image/{image_format};base64,{image_data})\n\n")
+                            # Add caption
+                            f.write(f"**Figure {figure_num}:** {caption}\n\n")
+                        else:
+                            # No image available, just show caption
+                            f.write(f"**Figure {figure_num}:** {caption}\n\n")
+
+                f.write("---\n\n")
+
             # Summary
             if paper.get('summary'):
                 f.write(f"### Summary (TL;DR)\n\n{paper['summary']}\n\n")

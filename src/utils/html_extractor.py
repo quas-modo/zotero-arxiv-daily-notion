@@ -25,7 +25,8 @@ class HTMLExtractor:
         timeout: Union[int, Dict] = 30,
         max_figures: int = 3,
         retry_config: Dict = None,
-        pool_config: Dict = None
+        pool_config: Dict = None,
+        download_images: bool = False
     ):
         """
         Initialize HTML extractor with enhanced timeout and retry support.
@@ -35,8 +36,10 @@ class HTMLExtractor:
             max_figures: Maximum number of figures to extract
             retry_config: Retry configuration dict
             pool_config: Connection pool configuration dict
+            download_images: Whether to download images (default: False, use URLs only)
         """
         self.max_figures = max_figures
+        self.download_images = download_images
 
         # Parse timeout configuration (backward compatible)
         self.timeouts = self._parse_timeout_config(timeout)
@@ -394,17 +397,21 @@ class HTMLExtractor:
             )
             return None
 
-    def extract_figures(self, html_content: str, download_images: bool = True) -> List[Dict]:
+    def extract_figures(self, html_content: str, arxiv_id: str = None, download_images: bool = None) -> List[Dict]:
         """
         Extract figures with captions from HTML.
 
         Args:
             html_content: Raw HTML string
-            download_images: Whether to download images as base64
+            arxiv_id: ArXiv paper ID (e.g., "2402.08954") for constructing image URLs
+            download_images: Whether to download images as base64 (default: use instance setting)
 
         Returns:
-            List of figure dicts with keys: image_data, caption, figure_number
+            List of figure dicts with keys: image_url, caption, figure_number
         """
+        # Use instance setting if not specified
+        if download_images is None:
+            download_images = self.download_images
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             figures = []
@@ -412,6 +419,12 @@ class HTMLExtractor:
             # Find all figure elements
             figure_elements = soup.find_all('figure', class_='ltx_figure')
             logger.info(f"Found {len(figure_elements)} figure elements in HTML")
+
+            # Clean arxiv_id (remove version suffix if present)
+            if arxiv_id:
+                clean_id = arxiv_id.split('v')[0] if 'v' in arxiv_id else arxiv_id
+            else:
+                clean_id = None
 
             for idx, figure in enumerate(figure_elements[:self.max_figures], 1):
                 try:
@@ -423,35 +436,53 @@ class HTMLExtractor:
 
                     img_src = img_tag.get('src')
 
-                    # Make absolute URL if relative
-                    if img_src.startswith('/'):
-                        img_url = f"https://arxiv.org{img_src}"
-                    elif not img_src.startswith('http'):
-                        img_url = f"https://arxiv.org/{img_src}"
-                    else:
+                    # Make absolute URL using ArXiv HTML format: https://arxiv.org/html/{arxiv_id}/{image_filename}
+                    if img_src.startswith('http'):
+                        # Already absolute URL
                         img_url = img_src
+                    elif clean_id:
+                        # Extract filename from path (handle both /path/to/file.png and path/to/file.png)
+                        img_filename = img_src.lstrip('/')
+                        img_url = f"https://arxiv.org/html/{clean_id}/{img_filename}"
+                    elif img_src.startswith('/'):
+                        # Fallback: use old format if no arxiv_id provided
+                        img_url = f"https://arxiv.org{img_src}"
+                    else:
+                        # Fallback: use old format if no arxiv_id provided
+                        img_url = f"https://arxiv.org/{img_src}"
 
                     # Extract caption
                     caption_tag = figure.find('figcaption', class_='ltx_caption')
                     caption = ""
-                    if caption_tag:
-                        # Remove "Figure X:" prefix if present
-                        caption_text = caption_tag.get_text(strip=True)
-                        caption = re.sub(r'^Figure\s+\d+[:.]\s*', '', caption_text, flags=re.IGNORECASE)
+                    original_figure_number = None
 
-                    # Download image if requested
+                    if caption_tag:
+                        caption_text = caption_tag.get_text(strip=True)
+
+                        # Try to extract original figure number (e.g., "Figure 2.1:", "Figure 3:")
+                        fig_num_match = re.match(r'^Figure\s+([\d\.]+)[:.]\s*', caption_text, flags=re.IGNORECASE)
+                        if fig_num_match:
+                            original_figure_number = fig_num_match.group(1)
+
+                        # Remove "Figure X:" prefix from caption
+                        caption = re.sub(r'^Figure\s+[\d\.]+[:.]\s*', '', caption_text, flags=re.IGNORECASE)
+
+                    # Optionally download image if requested (not recommended)
                     image_data = None
                     if download_images:
                         image_data = self._download_image(img_url)
                         if not image_data:
-                            logger.warning(f"Failed to download image for figure {idx}, skipping")
-                            continue
+                            logger.warning(f"Failed to download image for figure {idx}, using URL only")
+
+                    # Use original figure number if found, otherwise use sequential index
+                    figure_number = original_figure_number if original_figure_number else str(idx)
 
                     figures.append({
-                        'image_data': image_data,
                         'image_url': img_url,
+                        'image_data': image_data,  # None unless download_images=True
                         'caption': caption,
-                        'figure_number': idx
+                        'figure_number': figure_number,
+                        'sequential_index': idx  # Keep track of extraction order
                     })
 
                     logger.info(f"Extracted figure {idx}: {len(caption)} chars caption")
@@ -467,18 +498,21 @@ class HTMLExtractor:
             logger.error(f"Failed to extract figures from HTML: {e}")
             return []
 
-    def extract_multimodal_content(self, paper: Dict, download_images: bool = True) -> Dict:
+    def extract_multimodal_content(self, paper: Dict, download_images: bool = None) -> Dict:
         """
         Main entry point: Extract all content from ArXiv HTML paper.
 
         Args:
             paper: Paper dict containing 'arxiv_id' and 'html_url'
-            download_images: Whether to download images as base64
+            download_images: Whether to download images as base64 (default: use instance setting)
 
         Returns:
             Dict with keys: extraction_method, html_available, introduction,
                           methodology, conclusion, figures, num_figures, full_text
         """
+        # Use instance setting if not specified
+        if download_images is None:
+            download_images = self.download_images
         arxiv_id = paper.get('arxiv_id', '')
         html_url = paper.get('html_url', '')
 
@@ -520,7 +554,7 @@ class HTMLExtractor:
         sections = self.extract_sections(html_content)
 
         # Extract figures
-        figures = self.extract_figures(html_content, download_images=download_images)
+        figures = self.extract_figures(html_content, arxiv_id=arxiv_id, download_images=download_images)
 
         # Create full_text for backward compatibility
         full_text_parts = []

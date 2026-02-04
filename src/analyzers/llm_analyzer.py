@@ -24,7 +24,8 @@ class LLMAnalyzer:
         base_url: Optional[str] = None,
         summary_prompt_template: Optional[str] = None,
         detailed_prompt_template: Optional[str] = None,
-        config: Optional[Dict] = None
+        config: Optional[Dict] = None,
+        include_detailed_analysis: bool = False
     ):
         """
         Initialize LLM analyzer.
@@ -62,6 +63,8 @@ class LLMAnalyzer:
         self.summary_prompt_template = summary_prompt_template or self._default_summary_prompt()
         self.detailed_prompt_template = detailed_prompt_template or self._default_detailed_prompt()
 
+        self.include_detailed_analysis = config.get('include_detailed_analysis', False) if config else include_detailed_analysis
+
     def analyze_paper(self, paper: Dict, include_figures: bool = True) -> Dict:
         """
         Generate both summary and detailed analysis for a paper (English + Chinese).
@@ -70,11 +73,13 @@ class LLMAnalyzer:
         Args:
             paper: Paper dictionary with title, authors, abstract, etc.
             include_figures: Whether to extract and analyze figures
+            include_detailed_analysis: Whether to generate detailed analysis (default: False)
 
         Returns:
             Dictionary with English and Chinese analysis fields
         """
         logger.info(f"Analyzing paper: {paper.get('title', 'Unknown')[:80]}...")
+        logger.info(f"Include detailed analysis: {self.include_detailed_analysis}")
 
         try:
             # Extract multimodal content (HTML-first, PDF fallback)
@@ -101,24 +106,36 @@ class LLMAnalyzer:
             summary = self.generate_summary(paper)
 
             # Generate English detailed analysis with all sections
-            if methodology or conclusion:
-                # Use enhanced analysis with sections if available (HTML extraction)
-                detailed = self.generate_detailed_analysis_with_sections(
-                    paper, introduction, methodology, conclusion, figures
-                )
+            if self.include_detailed_analysis:
+                if methodology or conclusion:
+                    # Use enhanced analysis with sections if available (HTML extraction)
+                    detailed = self.generate_detailed_analysis_with_sections(
+                        paper, introduction, methodology, conclusion, figures
+                    )
+                else:
+                    # Fall back to figures-only analysis (PDF extraction)
+                    detailed = self.generate_detailed_analysis_with_figures(
+                        paper, introduction, figures
+                    )
             else:
-                # Fall back to figures-only analysis (PDF extraction)
-                detailed = self.generate_detailed_analysis_with_figures(
-                    paper, introduction, figures
-                )
+                # Skip detailed analysis if not requested
+                detailed = ""
 
             # Generate Chinese translations
             summary_zh = self.translate_to_chinese(summary, "summary")
-            detailed_zh = self.translate_to_chinese(detailed, "detailed analysis")
+            detailed_zh = self.translate_to_chinese(detailed, "detailed analysis") if detailed else ""
             abstract_zh = self.translate_to_chinese(paper.get('abstract', ''), "abstract")
             introduction_zh = self.translate_to_chinese(introduction, "introduction") if introduction else ""
             methodology_zh = self.translate_to_chinese(methodology, "methodology") if methodology else ""
             conclusion_zh = self.translate_to_chinese(conclusion, "conclusion") if conclusion else ""
+
+            # Translate figure captions to Chinese
+            for fig in figures:
+                caption = fig.get('caption', '')
+                if caption:
+                    fig['caption_zh'] = self.translate_to_chinese(caption, "figure caption")
+                else:
+                    fig['caption_zh'] = ''
 
             result = {
                 'summary': summary,
@@ -126,6 +143,7 @@ class LLMAnalyzer:
                 'introduction': introduction,
                 'methodology': methodology,
                 'conclusion': conclusion,
+                'figures': figures,  # Include figures list
                 'summary_zh': summary_zh,
                 'detailed_analysis_zh': detailed_zh,
                 'abstract_zh': abstract_zh,
@@ -149,6 +167,7 @@ class LLMAnalyzer:
                 'introduction': '',
                 'methodology': '',
                 'conclusion': '',
+                'figures': [],  # Empty figures list on error
                 'summary_zh': f"生成摘要时出错: {str(e)}",
                 'detailed_analysis_zh': f"生成分析时出错: {str(e)}",
                 'abstract_zh': '',
@@ -217,6 +236,7 @@ class LLMAnalyzer:
                 'introduction': introduction,
                 'methodology': methodology,
                 'conclusion': conclusion,
+                'figures': figures,  # Include figures list
                 'summary_zh': summary_zh,
                 'detailed_analysis_zh': detailed_zh,
                 'abstract_zh': abstract_zh,
@@ -501,7 +521,10 @@ Use markdown formatting. Include inline citations to your web search results lik
         figure_descriptions = []
         if figures:
             for fig in figures[:3]:  # Limit to top 3 figures
-                figure_descriptions.append(f"- Figure {fig['figure_num']} (Page {fig['page_num']}): {fig['caption']}")
+                figure_num = fig.get('figure_number', '?')
+                caption = fig.get('caption', 'No caption')
+                page_num = fig.get('page_num', '?')
+                figure_descriptions.append(f"- Figure {figure_num} (Page {page_num}): {caption}")
 
         figure_context = "\n".join(figure_descriptions) if figure_descriptions else "No figures extracted."
 
@@ -550,8 +573,11 @@ How this fits into the broader research landscape.
 Use markdown formatting. Be specific and technical. Reference the figures when describing methodology or architecture."""
 
         try:
-            # If vision model and figures available, include images
+            # If vision model and figures available with image data, include images
             if supports_vision and figures:
+                # Check if any figures have image_data (downloaded)
+                figures_with_data = [f for f in figures[:3] if f.get('image_data')]
+
                 messages = [
                     {"role": "system", "content": "You are an expert AI research assistant who analyzes academic papers using both text and visual information. You can examine figures, diagrams, and charts to provide deeper insights into methodology and results."},
                     {
@@ -562,16 +588,19 @@ Use markdown formatting. Be specific and technical. Reference the figures when d
                     }
                 ]
 
-                # Add up to 3 figures as images
-                for fig in figures[:3]:
-                    messages[1]["content"].append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/{fig['image_format']};base64,{fig['image_data']}"
-                        }
-                    })
-
-                logger.info(f"Analyzing with {len(figures[:3])} figures using vision model")
+                # Add images only if we have downloaded data
+                if figures_with_data:
+                    for fig in figures_with_data:
+                        image_format = fig.get('image_format', 'png')
+                        messages[1]["content"].append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{fig['image_data']}"
+                            }
+                        })
+                    logger.info(f"Analyzing with {len(figures_with_data)} figures using vision model")
+                else:
+                    logger.info("No image data available, using text-only analysis with figure captions")
 
             else:
                 # Text-only analysis
@@ -626,7 +655,7 @@ Use markdown formatting. Be specific and technical. Reference the figures when d
         figure_descriptions = []
         if figures:
             for fig in figures[:3]:
-                fig_num = fig.get('figure_number', fig.get('figure_num', '?'))
+                fig_num = fig.get('figure_number', '?')
                 caption = fig.get('caption', 'No caption')
                 figure_descriptions.append(f"- Figure {fig_num}: {caption}")
 
@@ -690,6 +719,9 @@ Use markdown formatting. Be specific and technical. Reference the extracted sect
         try:
             # If vision model and figures available, include images
             if supports_vision and figures:
+                # Check if any figures have image_data (downloaded)
+                figures_with_data = [f for f in figures[:3] if f.get('image_data')]
+
                 messages = [
                     {"role": "system", "content": "You are an expert AI research assistant who analyzes academic papers using structured text extraction and visual information. You can examine figures, diagrams, and charts alongside Introduction, Methodology, and Conclusion sections to provide comprehensive insights."},
                     {
@@ -700,9 +732,9 @@ Use markdown formatting. Be specific and technical. Reference the extracted sect
                     }
                 ]
 
-                # Add up to 3 figures as images (only if they have image_data)
-                for fig in figures[:3]:
-                    if fig.get('image_data'):
+                # Add images only if we have downloaded data
+                if figures_with_data:
+                    for fig in figures_with_data:
                         # Determine format
                         if fig.get('image_format'):
                             img_format = fig['image_format']
@@ -724,8 +756,9 @@ Use markdown formatting. Be specific and technical. Reference the extracted sect
                             "type": "image_url",
                             "image_url": {"url": image_url}
                         })
-
-                logger.info(f"Analyzing with {len(figures[:3])} figures using vision model (with structured sections)")
+                    logger.info(f"Analyzing with {len(figures_with_data)} figures using vision model (with structured sections)")
+                else:
+                    logger.info("No image data available, using text-only analysis with figure captions and structured sections")
 
             else:
                 # Text-only analysis

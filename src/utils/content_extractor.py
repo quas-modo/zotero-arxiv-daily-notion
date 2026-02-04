@@ -30,7 +30,7 @@ class ContentExtractor:
         html_config = self.config.get('html_extraction', {})
         self.html_enabled = html_config.get('enabled', True)
         self.prefer_html = html_config.get('prefer_html', True)
-        self.download_images = html_config.get('download_images', True)
+        self.download_images = html_config.get('download_images', False)  # Default: False (use URLs)
         self.max_figures = html_config.get('max_figures', 3)
 
         # Parse timeout configuration (backward compatible)
@@ -60,7 +60,8 @@ class ContentExtractor:
             timeout=timeout_config,
             max_figures=self.max_figures,
             retry_config=retry_config,
-            pool_config=pool_config
+            pool_config=pool_config,
+            download_images=self.download_images  # Pass download_images setting
         )
 
     def extract_multimodal_content(self, paper: Dict) -> Dict:
