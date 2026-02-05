@@ -27,33 +27,38 @@ class ContentExtractor:
         self.config = config or {}
 
         # Get HTML extraction settings
-        html_config = self.config.get('html_extraction', {})
-        self.html_enabled = html_config.get('enabled', True)
-        self.prefer_html = html_config.get('prefer_html', True)
-        self.download_images = html_config.get('download_images', False)  # Default: False (use URLs)
-        self.max_figures = html_config.get('max_figures', 3)
+        html_config = self.config.get("html_extraction", {})
+        self.html_enabled = html_config.get("enabled", True)
+        self.prefer_html = html_config.get("prefer_html", True)
+        self.download_images = html_config.get(
+            "download_images", False
+        )  # Default: False (use URLs)
+        self.max_figures = html_config.get("max_figures", 3)
+        self.use_full_text = html_config.get("use_full_text", True)
 
         # Parse timeout configuration (backward compatible)
-        timeout_config = html_config.get('timeout', 30)
-        if 'timeouts' in html_config:
+        timeout_config = html_config.get("timeout", 30)
+        if "timeouts" in html_config:
             # New format with granular timeouts
-            timeout_config = html_config['timeouts']
+            timeout_config = html_config["timeouts"]
 
         # Get retry configuration (with defaults)
-        retry_config = html_config.get('retry', {
-            'enabled': True,
-            'max_retries': 3,
-            'backoff_factor': 1.0,
-            'retry_on_status': [500, 502, 503, 504, 429],
-            'retry_on_timeout': True
-        })
+        retry_config = html_config.get(
+            "retry",
+            {
+                "enabled": True,
+                "max_retries": 3,
+                "backoff_factor": 1.0,
+                "retry_on_status": [500, 502, 503, 504, 429],
+                "retry_on_timeout": True,
+            },
+        )
 
         # Get connection pool configuration (with defaults)
-        pool_config = html_config.get('connection_pool', {
-            'pool_connections': 10,
-            'pool_maxsize': 20,
-            'pool_block': False
-        })
+        pool_config = html_config.get(
+            "connection_pool",
+            {"pool_connections": 10, "pool_maxsize": 20, "pool_block": False},
+        )
 
         # Initialize HTML extractor with enhanced config
         self.html_extractor = HTMLExtractor(
@@ -61,7 +66,8 @@ class ContentExtractor:
             max_figures=self.max_figures,
             retry_config=retry_config,
             pool_config=pool_config,
-            download_images=self.download_images  # Pass download_images setting
+            download_images=self.download_images,  # Pass download_images setting
+            use_full_text=self.use_full_text,
         )
 
     def extract_multimodal_content(self, paper: Dict) -> Dict:
@@ -82,7 +88,7 @@ class ContentExtractor:
                 - num_figures: int
                 - full_text: str
         """
-        arxiv_id = paper.get('arxiv_id', 'unknown')
+        arxiv_id = paper.get("arxiv_id", "unknown")
 
         # Try HTML extraction first if enabled and preferred
         if self.html_enabled and self.prefer_html:
@@ -91,22 +97,29 @@ class ContentExtractor:
             try:
                 html_result = self.html_extractor.extract_multimodal_content(
                     paper,
-                    download_images=self.download_images
+                    download_images=self.download_images,
+                    use_full_text=self.use_full_text,
                 )
 
                 # Check if HTML extraction was successful
-                if html_result.get('html_available', False):
-                    # Verify we got at least introduction
-                    if html_result.get('introduction'):
+                if html_result.get("html_available", False):
+                    # Verify we got at least introduction or conclusion
+                    if html_result.get("introduction") or html_result.get("conclusion"):
                         logger.info(f"HTML extraction successful for {arxiv_id}")
                         return html_result
                     else:
-                        logger.warning(f"HTML available but no introduction extracted for {arxiv_id}, falling back to PDF")
+                        logger.warning(
+                            f"HTML available but no introduction extracted for {arxiv_id}, falling back to PDF"
+                        )
                 else:
-                    logger.info(f"HTML not available for {arxiv_id}, falling back to PDF")
+                    logger.info(
+                        f"HTML not available for {arxiv_id}, falling back to PDF"
+                    )
 
             except Exception as e:
-                logger.error(f"HTML extraction failed for {arxiv_id}: {e}, falling back to PDF")
+                logger.error(
+                    f"HTML extraction failed for {arxiv_id}: {e}, falling back to PDF"
+                )
 
         # Fall back to PDF extraction
         logger.info(f"Using PDF extraction for {arxiv_id}")
@@ -124,26 +137,26 @@ class ContentExtractor:
         """
         try:
             pdf_result = PDFTextExtractor.extract_multimodal_content(
-                paper,
-                extract_figures=True,
-                max_figures=self.max_figures
+                paper, extract_figures=True, max_figures=self.max_figures
             )
 
             # Transform PDF result to match unified structure
             result = {
-                'extraction_method': 'pdf',
-                'html_available': False,
-                'introduction': pdf_result.get('introduction') or "",
-                'methodology': "",  # PDF doesn't extract methodology separately
-                'conclusion': "",   # PDF doesn't extract conclusion separately
-                'figures': pdf_result.get('figures', []),
-                'num_figures': pdf_result.get('num_figures', 0),
-                'full_text': pdf_result.get('full_text') or ""
+                "extraction_method": "pdf",
+                "html_available": False,
+                "introduction": pdf_result.get("introduction") or "",
+                "methodology": "",  # PDF doesn't extract methodology separately
+                "conclusion": "",  # PDF doesn't extract conclusion separately
+                "figures": pdf_result.get("figures", []),
+                "num_figures": pdf_result.get("num_figures", 0),
+                "full_text": pdf_result.get("full_text") or "",
             }
 
-            logger.info(f"PDF extraction complete: "
-                       f"{len(result['introduction'])} chars intro, "
-                       f"{len(result['figures'])} figures")
+            logger.info(
+                f"PDF extraction complete: "
+                f"{len(result['introduction'])} chars intro, "
+                f"{len(result['figures'])} figures"
+            )
 
             return result
 
@@ -151,14 +164,14 @@ class ContentExtractor:
             logger.error(f"PDF extraction failed: {e}")
             # Return empty result on failure
             return {
-                'extraction_method': 'pdf',
-                'html_available': False,
-                'introduction': "",
-                'methodology': "",
-                'conclusion': "",
-                'figures': [],
-                'num_figures': 0,
-                'full_text': ""
+                "extraction_method": "pdf",
+                "html_available": False,
+                "introduction": "",
+                "methodology": "",
+                "conclusion": "",
+                "figures": [],
+                "num_figures": 0,
+                "full_text": "",
             }
 
     @staticmethod

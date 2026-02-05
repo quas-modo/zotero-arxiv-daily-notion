@@ -128,6 +128,7 @@ html_extraction:
   enabled: true              # Enable HTML extraction as primary method
   prefer_html: true          # Try HTML first before falling back to PDF
   download_images: true      # Download images from HTML figures
+  use_full_text: true        # Use full text of the paper
 
   # Timeout Configuration (backward compatible)
   # Simple format: single timeout value for all requests
@@ -154,7 +155,7 @@ html_extraction:
     pool_maxsize: 20         # Max connections per pool
     pool_block: false        # Don't block when pool is full
 
-  max_figures: 3             # Maximum number of figures to extract
+  max_figures: 10             # Maximum number of figures to extract
   # Note: HTML extraction provides structured sections (Introduction, Methodology, Conclusion)
   # and better figure extraction with captions. Falls back to PDF if HTML unavailable.
   # ArXiv HTML versions are available for ~80% of papers from 2024+.
