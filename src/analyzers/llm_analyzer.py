@@ -124,7 +124,7 @@ class LLMAnalyzer:
                 introduction = paper.get("abstract", "")
 
             # Generate English summary
-            summary = self.generate_summary(paper)
+            summary = self.generate_summary(paper, introduction)
 
             # Generate English detailed analysis with all sections
             if self.include_detailed_analysis:
@@ -297,7 +297,7 @@ class LLMAnalyzer:
                 introduction = paper.get("abstract", "")
 
             # Generate summary (standard, no web search needed)
-            summary = self.generate_summary(paper)
+            summary = self.generate_summary(paper, introduction)
 
             # Generate deep-dive analysis WITH web search
             detailed, web_sources = self.generate_analysis_with_web_context(
@@ -559,7 +559,7 @@ Use markdown formatting. Include inline citations to your web search results lik
             )
             return analysis, []
 
-    def generate_summary(self, paper: Dict) -> str:
+    def generate_summary(self, paper: Dict, introduction: str) -> str:
         """
         Generate concise TL;DR summary.
 
@@ -574,6 +574,7 @@ Use markdown formatting. Include inline citations to your web search results lik
             title=paper.get("title", "Unknown"),
             authors=", ".join(paper.get("authors", [])[:5]),
             abstract=paper.get("abstract", "No abstract available"),
+            introduction=introduction,
             pdf_url=paper.get("pdf_url", ""),
             arxiv_url=paper.get("entry_url", ""),
         )
@@ -619,6 +620,7 @@ Use markdown formatting. Include inline citations to your web search results lik
             arxiv_id=paper.get("arxiv_id", "Unknown"),
             pdf_url=paper.get("pdf_url", ""),
             arxiv_url=paper.get("entry_url", ""),
+            introduction=introduction,
         )
 
         try:
@@ -1051,6 +1053,7 @@ Authors: {authors}
 Abstract: {abstract}
 PDF: {pdf_url}
 ArXiv: {arxiv_url}
+Introduction: {introduction}
 
 Provide a clear, concise summary with:
 1. **Core Contribution** (1-2 sentences): What is the main innovation or finding?
@@ -1070,6 +1073,7 @@ ArXiv ID: {arxiv_id}
 Abstract: {abstract}
 PDF: {pdf_url}
 ArXiv: {arxiv_url}
+Introduction: {introduction}
 
 Provide a detailed analysis with the following sections:
 

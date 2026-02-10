@@ -17,7 +17,10 @@ class NotionClient:
     """Client for interacting with Notion API"""
 
     def __init__(
-        self, api_key: Optional[str] = None, database_id: Optional[str] = None
+        self,
+        api_key: Optional[str] = None,
+        database_id: Optional[str] = None,
+        config: Optional[Dict] = None,
     ):
         """
         Initialize Notion client.
@@ -37,6 +40,8 @@ class NotionClient:
             raise ValueError(
                 "Notion database ID not provided. Set NOTION_DATABASE_ID environment variable."
             )
+
+        self.config = config or {}
 
         self.client = Client(auth=self.api_key)
         logger.info(
@@ -515,6 +520,9 @@ class NotionClient:
         # ========================================
         # ENGLISH CONTENT SECOND
         # ========================================
+        if not self.config.get("has_english"):
+            return blocks
+
         blocks.append({"object": "block", "type": "divider", "divider": {}})
 
         blocks.append(

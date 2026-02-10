@@ -15,39 +15,39 @@ arxiv:
 # Research Keywords (for relevance filtering)
 keywords:
   primary:
-    # 核心领域：具身智能与物理世界建模
+    # Core Domains:
     - Embodied AI
     - World Models
     - Robotic Manipulation
     - Generalist Robot Policy
     
-    # 核心技术架构 (2026 热门)
+    # Core Technical Architectures:
     - VLA Models (Vision-Language-Action)
     - Diffusion Policy
     - Flow Matching for Robotics
     - Video Generative Pre-training
     
-    # 核心能力
+    # Core Capabilities:
     - Fine-grained Manipulation
     - Long-horizon Planning
     - Cross-embodiment Learning
     - Skill Generalization
 
   secondary:
-    # 支撑技术与表示学习
+    # Supporting Technologies & Representation Learning:
     - 3D Gaussian Splatting (3DGS)
     - Foundation Models for Robotics
     - Vision-Language Models (VLM)
     - Affordance Learning
     - Reinforcement Learning (Offline/Online)
     
-    # 仿真与数据
+    # Simulation & Data:
     - Sim-to-Real Transfer
     - Synthetic Data Generation
     - Real2Edit2Real
     - DROID / Bridge Dataset
     
-    # 任务场景
+    # Task Scenarios:
     - Dexterous Manipulation
     - Contact-rich Tasks
     - Active Perception
@@ -62,7 +62,7 @@ similarity_filter:
 
   # Reference paper sources
   use_zotero_library: true  # Compare against papers in your Zotero library
-  zotero_paper_limit: 100  # Max papers to fetch from Zotero
+  zotero_paper_limit: 300  # Max papers to fetch from Zotero
 
   # Scholar-Inbox integration (manual export)
   scholar_inbox_file: "data/scholar_inbox.json"  # Path to exported recommendations
@@ -98,6 +98,7 @@ llm:
     Paper Title: {title}
     Authors: {authors}
     Abstract: {abstract}
+    Introduction: {introduction}
 
     Provide:
     1. Core Contribution (1-2 sentences)
@@ -112,6 +113,7 @@ llm:
     Paper Title: {title}
     Authors: {authors}
     Abstract: {abstract}
+    Introduction: {introduction}
 
     Provide a detailed analysis covering:
     1. **Background & Motivation**: Why is this problem important?
@@ -128,7 +130,7 @@ html_extraction:
   enabled: true              # Enable HTML extraction as primary method
   prefer_html: true          # Try HTML first before falling back to PDF
   download_images: true      # Download images from HTML figures
-  use_full_text: true        # Use full text of the paper
+  use_full_text: false        # Use full text of the paper
 
   # Timeout Configuration (backward compatible)
   # Simple format: single timeout value for all requests
@@ -174,6 +176,7 @@ notion:
     github_link: "GitHub"
     summary: "Summary"
     detailed_analysis: "Detailed Analysis"
+  has_english: False
 
 # Zotero Settings (optional)
 zotero:

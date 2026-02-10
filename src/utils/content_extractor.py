@@ -34,7 +34,7 @@ class ContentExtractor:
             "download_images", False
         )  # Default: False (use URLs)
         self.max_figures = html_config.get("max_figures", 3)
-        self.use_full_text = html_config.get("use_full_text", True)
+        self.use_full_text = html_config.get("use_full_text", False)
 
         # Parse timeout configuration (backward compatible)
         timeout_config = html_config.get("timeout", 30)
