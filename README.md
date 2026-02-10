@@ -7,6 +7,7 @@ An automated tool that discovers, analyzes, and archives academic papers from Ar
 ## 📑 Table of Contents
 
 - [Overview](#overview)
+- [⭐ Showcase](#-showcase)
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [📦 Installation](#-installation)
@@ -49,6 +50,12 @@ The Research Paper Intelligence Assistant automates the entire workflow of disco
 - 📝 **Bilingual output** (English + Chinese translations)
 
 ---
+
+## ⭐ Showcase
+
+<img src="assets/notion_1.png" width="600">
+<img src="assets/notion_2.png" width="600">
+<img src="assets/notion_3.png" width="600">
 
 ## ✨ Features
 
