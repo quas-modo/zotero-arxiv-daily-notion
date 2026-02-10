@@ -1,0 +1,41 @@
+# Core dependencies
+python-dotenv>=1.0.0
+PyYAML>=6.0
+
+# ArXiv integration
+arxiv>=2.0.0
+
+# LLM integration
+openai>=1.0.0
+
+# Notion integration
+notion-client>=2.0.0
+
+# Zotero integration (optional)
+pyzotero>=1.5.0
+
+# LaTeX parsing
+pylatexenc>=2.10
+
+# Utilities
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+feedparser>=6.0.0
+
+# PDF processing
+PyPDF2>=3.0.0
+pymupdf>=1.23.0  # Optional but recommended for figure extraction
+
+# Date handling
+python-dateutil>=2.8.0
+
+# Scheduling
+schedule>=1.2.0
+
+# ML/Embeddings for similarity filtering
+sentence-transformers>=2.3.0
+torch>=2.0.0
+scikit-learn>=1.3.0
+
+# Testing
+pytest>=7.4.0

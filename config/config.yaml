@@ -1,0 +1,198 @@
+# Research Paper Intelligence Assistant Configuration
+
+# ArXiv Settings
+arxiv:
+  categories:
+    - cs.AI  # Artificial Intelligence
+    - cs.CL  # Computation and Language
+    - cs.LG  # Machine Learning
+    - cs.RO  # Robotics
+    - cs.CV  # Computer Vision
+  max_results: 50  # Fetch top N papers to filter from
+  sort_by: "submittedDate"
+  sort_order: "descending"
+
+# Research Keywords (for relevance filtering)
+keywords:
+  primary:
+    # Core Domains:
+    - Embodied AI
+    - World Models
+    - Robotic Manipulation
+    - Generalist Robot Policy
+    
+    # Core Technical Architectures:
+    - VLA Models (Vision-Language-Action)
+    - Diffusion Policy
+    - Flow Matching for Robotics
+    - Video Generative Pre-training
+    
+    # Core Capabilities:
+    - Fine-grained Manipulation
+    - Long-horizon Planning
+    - Cross-embodiment Learning
+    - Skill Generalization
+
+  secondary:
+    # Supporting Technologies & Representation Learning:
+    - 3D Gaussian Splatting (3DGS)
+    - Foundation Models for Robotics
+    - Vision-Language Models (VLM)
+    - Affordance Learning
+    - Reinforcement Learning (Offline/Online)
+    
+    # Simulation & Data:
+    - Sim-to-Real Transfer
+    - Synthetic Data Generation
+    - Real2Edit2Real
+    - DROID / Bridge Dataset
+    
+    # Task Scenarios:
+    - Dexterous Manipulation
+    - Contact-rich Tasks
+    - Active Perception
+
+# Similarity-based Filtering (Primary Filter)
+similarity_filter:
+  enabled: true  # Temporarily disabled for quick testing
+  min_similarity_score: 0.6  # 0-1 scale, minimum cosine similarity to keep
+  top_k_papers: 20  # Keep top K most similar papers
+  embedding_model: "all-MiniLM-L6-v2"  # Sentence transformer model
+  cache_embeddings: true  # Cache embeddings to speed up future runs
+
+  # Reference paper sources
+  use_zotero_library: true  # Compare against papers in your Zotero library
+  zotero_paper_limit: 300  # Max papers to fetch from Zotero
+
+  # Scholar-Inbox integration (manual export)
+  scholar_inbox_file: "data/scholar_inbox.json"  # Path to exported recommendations
+
+  # Scoring weights (must sum to 1.0)
+  # Higher similarity weight = prioritize semantic relevance over keyword matching
+  similarity_weight: 0.85  # Weight for similarity score (semantic matching)
+  keyword_weight: 0.15  # Weight for keyword matching score (term frequency)
+
+# Filtering Settings
+filtering:
+  max_papers_per_day: 10
+  min_relevance_score: 0.3  # 0-1 scale
+  prioritize_github_links: true  # Boost papers with code
+
+# LLM Analysis Settings
+llm:
+  provider: "openai"
+  include_detailed_analysis: false
+
+  # Deep Dive Mode with Web Search
+  deep_dive_mode: false  # Enable web search for context enrichment (requires gpt-4o or later)
+  # When enabled, the LLM will use web search to find:
+  # - Official documentation for mentioned frameworks
+  # - GitHub repositories for implementations
+  # - Related blog posts and technical articles
+  # - Comparison articles and benchmarks
+  # Note: Uses more tokens and takes longer, but provides richer context
+
+  summary_prompt: |
+    You are an AI research assistant. Analyze this academic paper and provide a concise TL;DR summary.
+
+    Paper Title: {title}
+    Authors: {authors}
+    Abstract: {abstract}
+    Introduction: {introduction}
+
+    Provide:
+    1. Core Contribution (1-2 sentences)
+    2. Key Innovation (1-2 sentences)
+    3. Practical Impact (1-2 sentences)
+
+    Keep it under 150 words.
+
+  detailed_prompt: |
+    You are an AI research assistant. Provide a comprehensive analysis of this academic paper.
+
+    Paper Title: {title}
+    Authors: {authors}
+    Abstract: {abstract}
+    Introduction: {introduction}
+
+    Provide a detailed analysis covering:
+    1. **Background & Motivation**: Why is this problem important?
+    2. **Methodology**: What approach did they take? Include key technical details.
+    3. **Key Findings**: What are the main results and contributions?
+    4. **Strengths & Limitations**: Critical evaluation
+    5. **Practical Applications**: Real-world use cases
+    6. **Related Work**: How does this fit into the broader research landscape?
+
+    Write in clear, accessible language. Use markdown formatting.
+
+# HTML Extraction Settings
+html_extraction:
+  enabled: true              # Enable HTML extraction as primary method
+  prefer_html: true          # Try HTML first before falling back to PDF
+  download_images: true      # Download images from HTML figures
+  use_full_text: false        # Use full text of the paper
+
+  # Timeout Configuration (backward compatible)
+  # Simple format: single timeout value for all requests
+  timeout: 30                # HTTP request timeout (seconds) - increased from 15s
+
+  # Advanced format (optional, overrides simple timeout if specified):
+  # timeouts:
+  #   head_request: 20       # HEAD request for availability check
+  #   get_html: 30           # GET request for HTML download
+  #   get_image: 25          # GET request for images
+  #   connect: 10            # TCP connection timeout
+
+  # Retry Configuration
+  retry:
+    enabled: true            # Enable automatic retries for transient failures
+    max_retries: 3           # Number of retry attempts (exponential backoff)
+    backoff_factor: 1.0      # Backoff multiplier: 1s, 2s, 4s
+    retry_on_status: [500, 502, 503, 504, 429]  # HTTP status codes to retry
+    retry_on_timeout: true   # Retry on timeout errors
+
+  # Connection Pooling
+  connection_pool:
+    pool_connections: 10     # Number of connection pools
+    pool_maxsize: 20         # Max connections per pool
+    pool_block: false        # Don't block when pool is full
+
+  max_figures: 10             # Maximum number of figures to extract
+  # Note: HTML extraction provides structured sections (Introduction, Methodology, Conclusion)
+  # and better figure extraction with captions. Falls back to PDF if HTML unavailable.
+  # ArXiv HTML versions are available for ~80% of papers from 2024+.
+
+
+# Notion Settings
+notion:
+  properties:
+    title: "Title"
+    authors: "Authors"
+    date: "Published Date"
+    categories: "Categories"
+    keywords: "Keywords"
+    arxiv_id: "ArXiv ID"
+    pdf_link: "PDF Link"
+    github_link: "GitHub"
+    summary: "Summary"
+    detailed_analysis: "Detailed Analysis"
+  has_english: False
+
+# Zotero Settings (optional)
+zotero:
+  enabled: false
+  collection_name: "Daily ArXiv Papers"
+  tags:
+    - "auto-imported"
+    - "arxiv"
+
+# Scheduling
+schedule:
+  run_time: "09:00"  # Run daily at 9 AM (24-hour format)
+  timezone: "UTC"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/paper_assistant.log"
