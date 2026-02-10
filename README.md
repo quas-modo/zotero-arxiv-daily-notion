@@ -61,7 +61,7 @@ The Research Paper Intelligence Assistant automates the entire workflow of disco
   - Finds conceptually related papers, not just keyword matches
 - 🔍 **Smart Deduplication**: Checks ArXiv ID, DOI, and title before adding to Zotero
 - 🖼️ **Multimodal Content Extraction**:
-  - Full text extraction from PDFs
+  - Full text extraction from html
   - Figure detection and extraction (architecture diagrams, results)
   - Caption extraction for context
 - 🤖 **AI-Powered Analysis**:
@@ -77,7 +77,7 @@ The Research Paper Intelligence Assistant automates the entire workflow of disco
 
 ✅ **Zotero Deduplication** - Never add duplicate papers
 ✅ **Semantic-First Scoring** - 85/15 split prioritizes relevance
-✅ **Multimodal Extraction** - Full text + figures from PDFs
+✅ **Multimodal Extraction** - Full text + figures from html
 ✅ **Vision Analysis** - GPT-4o analyzes architecture diagrams
 
 ---
@@ -628,13 +628,6 @@ html_extraction:
   timeout: 30                # HTTP request timeout (seconds)
   max_figures: 3             # Maximum number of figures to extract
 
-  # Advanced timeout configuration (optional)
-  # timeouts:
-  #   head_request: 20       # HEAD request for availability check
-  #   get_html: 30           # GET request for HTML download
-  #   get_image: 25          # GET request for images
-  #   connect: 10            # TCP connection timeout
-
   # Retry Configuration (handles transient failures)
   retry:
     enabled: true            # Enable automatic retries
@@ -728,41 +721,6 @@ The system architecture (Figure 2) employs three key innovations:
 OPENAI_MODEL=gpt-4o  # For figure analysis
 # OPENAI_MODEL=gpt-4o-mini  # For text-only (cheaper)
 ```
-
----
-
-### Optimization Summary
-
-**Processing flow comparison:**
-
-| Step | Before | After |
-|------|--------|-------|
-| 1. Fetch | 50 papers | 50 papers |
-| 1.5. Dedupe | ❌ Not done | ✅ 35 new (15 duplicates removed) |
-| 2. Similarity | 20 papers (70% weight) | 15 papers (85% weight) |
-| 3. Keywords | 10 papers (30% weight) | 10 papers (15% weight) |
-| 4. Analysis | Text only | Text + 3 figures per paper |
-| 5. Quality | Good | ⭐ Excellent |
-
-**Performance impact:**
-- **Time:** Similar or faster (fewer papers to process)
-- **Cost:** 20-40% lower (deduplication savings)
-- **Quality:** Significantly better (vision + semantics)
-
-**Test optimizations:**
-```bash
-python test_optimizations.py
-```
-
-Expected output:
-```
-✓ Zotero deduplication: Working (27 identifiers)
-✓ Semantic scoring: Configured (85/15 split)
-✓ Multimodal extraction: Ready
-✓ Vision analysis: gpt-4o detected
-```
-
----
 
 ## 📊 How It Works
 
@@ -960,7 +918,6 @@ Daily_Reading_Paper/
 │
 ├── tests/                       # Test suite
 │   ├── test_arxiv_fetcher.py
-│   ├── test_similarity_filter.py
 │   ├── test_llm_analyzer.py
 │   ├── test_notion.py
 │   └── test_openai_config.py
@@ -989,9 +946,6 @@ python tests/test_openai_config.py
 
 # Test Notion integration
 python tests/test_notion.py
-
-# Test similarity filtering
-python tests/test_similarity_filter.py
 
 # Test LLM analysis
 python tests/test_llm_analyzer.py
@@ -1167,21 +1121,6 @@ python src/main.py 2>&1 | tee output.log
 - [ ] OCR for better figure text extraction
 - [ ] Extract equations and formulas
 - [ ] Methodology section extraction (like Introduction)
-- [ ] Support for more document sources (bioRxiv, SSRN)
-- [ ] Browser extension for manual paper additions
-- [ ] Paper comparison and trend analysis
-- [ ] Citation network visualization
-- [ ] Custom embedding models fine-tuned on your research
-- [ ] Slack/Discord notifications for high-priority papers
-- [ ] Web interface for configuration and monitoring
-
-### Ideas 💡
-
-- Integration with Semantic Scholar API
-- PDF annotation export to Notion
-- Generate literature review sections automatically
-- Paper recommendation based on your notes
-- Collaborative features for research teams
 
 ---
 
@@ -1189,16 +1128,4 @@ python src/main.py 2>&1 | tee output.log
 
 MIT License
 
-Copyright (c) 2026 Research Paper Intelligence Assistant
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
----
-
-**Made with ❤️ for researchers who want to stay on top of the latest papers without drowning in information overload.**
-
-**Questions? Issues? Ideas?** Open an issue or pull request!
